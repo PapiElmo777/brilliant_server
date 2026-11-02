@@ -1,0 +1,16 @@
+services:
+  server:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DATA_DIR: /data
+      BIND_ADDRESS: 0.0.0.0
+    volumes:
+      - brilliant-data:/data
+    restart: unless-stopped
+    mem_limit: 768m
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  brilliant-data:

@@ -1,0 +1,40 @@
+server:
+  address: ${BIND_ADDRESS:127.0.0.1}
+  port: ${PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: none
+  tomcat:
+    max-http-form-post-size: 8KB
+    max-swallow-size: 8KB
+    threads:
+      max: 32
+  error:
+    include-message: never
+    include-stacktrace: never
+spring:
+  application:
+    name: brilliant-server
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  main:
+    banner-mode: 'off'
+logging:
+  level:
+    root: WARN
+    com.brilliant.server: INFO
+app:
+  data-dir: ${DATA_DIR:./data}
+  database-url: ${DATABASE_URL:}
+  issuer: ${JWT_ISSUER:brilliant-server}
+  audience: ${JWT_AUDIENCE:brilliant-game}
+  public-origin: ${PUBLIC_ORIGIN:http://localhost:8080}
+  production: ${PRODUCTION:false}
+  access-seconds: ${ACCESS_SECONDS:600}
+  session-seconds: ${SESSION_SECONDS:2592000}
+  allowed-origins: ${ALLOWED_ORIGINS:}
+  login-ip-limit: ${LOGIN_IP_LIMIT:10}
+  login-name-limit: ${LOGIN_NAME_LIMIT:5}
+  register-ip-limit: ${REGISTER_IP_LIMIT:5}
+  refresh-limit: ${REFRESH_LIMIT:30}
+  account-limit: ${ACCOUNT_LIMIT:5}

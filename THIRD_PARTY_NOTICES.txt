@@ -1,0 +1,29 @@
+# Recursos de terceros
+
+`src/main/resources/common-passwords.txt` contiene las entradas de 15–128 puntos de código, en minúsculas, de [SecLists: 100k-most-used-passwords-NCSC.txt](https://github.com/danielmiessler/SecLists/blob/master/Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt), más frases comunes locales. Descarga: 2026-11-02. SHA-256 del archivo fuente: `c2e5696882c603b76bb67a47ee970897e5a76fc4c3f5547abe3d0ca340c576e0`.
+
+Solo se filtran contraseñas de longitudes admitidas; las más cortas ya son rechazadas por la política de longitud. La comparación de la lista ignora mayúsculas; el hash y la autenticación conservan exactamente la contraseña. No se realizan consultas externas durante registro/login. Revisar y ampliar periódicamente esta lista; no representa todas las contraseñas comprometidas. Licencia original incluida a continuación.
+
+Las bibliotecas Java y sus versiones están fijadas en pom.xml y el BOM de Spring Boot. Maven Wrapper conserva su aviso y licencia en los scripts originales de Apache.
+
+MIT License
+
+Copyright (c) 2018 Daniel Miessler
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
