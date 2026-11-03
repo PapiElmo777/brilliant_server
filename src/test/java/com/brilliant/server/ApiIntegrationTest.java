@@ -46,6 +46,29 @@ class ApiIntegrationTest {
     final HttpClient client=HttpClient.newHttpClient();
     static final String PASSWORD="Mi clave espacial segura 🚀 47";
     record Reply(int status,JsonNode body,HttpHeaders headers) {}
+    @Test void shortPasswordRequiresSpecialCharacterAndSupportsAccountLifecycle() throws Exception {
+        for(String invalid : List.of("a!", "abc", "a 2", "áéí")) {
+            error(request("POST","/auth/register",Map.of("username",name(),"password",invalid),null),400,"VALIDATION_ERROR");
+        }
+        String name=name();
+        Reply registered=request("POST","/auth/register",Map.of("username",name,"password","a!2"),null);
+        assertEquals(201,registered.status);
+        Reply login=request("POST","/auth/login",Map.of("username",name,"password","a!2"),null);
+        assertEquals(200,login.status);
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword","a!2"),access(login)).status);
+        error(request("POST","/auth/login",Map.of("username",name,"password","a!2"),null),401,"INVALID_CREDENTIALS");
+    }
+    @Test void existingPasswordWithoutSymbolStillAllowsLoginAndDeletion() throws Exception {
+        String username=name(), password="Clave anterior sin simbolos 8492";
+        String id=UUID.randomUUID().toString();
+        // Seed a legacy account through the same password encoder used in production.
+        var encoder=org.springframework.security.crypto.argon2.Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+        db.update("INSERT INTO users(id,username,username_normalized,password_hash,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            id,username,username.toLowerCase(Locale.ROOT),encoder.encode(password),clock.instant().toString(),clock.instant().toString());
+        Reply login=request("POST","/auth/login",Map.of("username",username,"password",password),null);
+        assertEquals(200,login.status);
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",password),access(login)).status);
+    }
     @BeforeEach void clear() {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

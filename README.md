@@ -18,3 +18,15 @@ El primer comando requiere JDK 21 o superior y acceso a Maven Central. El JAR us
 La documentación de trabajo se conserva localmente en `docs/`, excluida del repositorio. Los avisos de licencias están en [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 
 El proyecto Flutter se mantiene en su propio repositorio. La fase 1 móvil acordada comprende crear cuenta, iniciar sesión y eliminar cuenta. Renombrado y logout permanecen como capacidades de la API, fuera de esta entrega Flutter. Las salas y partidas en línea corresponden a una fase posterior.
+
+## Actualización de contraseña: 3 de noviembre de 2026
+
+Registro requiere **3–128 caracteres y al menos un carácter de puntuación o símbolo**, como `a!2`. Los espacios no cuentan como carácter especial. Se mantienen los controles de contraseñas comunes, Argon2id, límites de intentos y sesiones. Login y verificación de contraseña actual conservan compatibilidad con cuentas anteriores sin símbolo.
+
+Se verificaron **19 pruebas del servidor** y el recorrido Flutter → JAR de registro, login y borrado usando `a!2`. Para no sobrescribir el JAR de un proceso activo, esta actualización se compiló en una copia temporal y se dejó en `target/brilliant-server-passwords.jar`. Detener el servidor anterior antes de ejecutarlo, desde esta carpeta para conservar sus datos:
+
+```sh
+java -jar target/brilliant-server-passwords.jar --server.address=0.0.0.0 --server.port=8080
+```
+
+No ejecutar `mvn verify` sobre el mismo JAR que esté usando un servidor abierto; detener primero ese proceso o compilar en un directorio separado.

@@ -25,13 +25,15 @@ public class Credentials {
     public String normalized(String name) { return name.toLowerCase(Locale.ROOT); }
     public void newPassword(String password) {
         passwordInput(password);
+        if(!password.matches("(?s).*[\\p{P}\\p{S}].*"))
+            throw new ApiException(400,"VALIDATION_ERROR",Map.of("password","Incluye al menos un carácter especial, como !, @ o #."),0);
         if(common.contains(password.toLowerCase(Locale.ROOT)))
             throw new ApiException(400,"VALIDATION_ERROR",Map.of("password","Elige una contraseña que no sea común."),0);
     }
     public void passwordInput(String password) {
         int n=password==null ? 0 : password.codePointCount(0,password.length());
-        if(n<15 || n>128 || !wellFormed(password))
-            throw new ApiException(400,"VALIDATION_ERROR",Map.of("password","Usa de 15 a 128 puntos de código Unicode válidos."),0);
+        if(n<3 || n>128 || !wellFormed(password))
+            throw new ApiException(400,"VALIDATION_ERROR",Map.of("password","Usa de 3 a 128 caracteres Unicode válidos."),0);
     }
     private boolean wellFormed(String value) {
         for(int i=0;i<value.length();i++) {
