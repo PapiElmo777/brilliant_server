@@ -2,7 +2,7 @@
 
 Servidor independiente de cuentas para Brilliant, en Java 21+, Spring Boot, Spring Security y SQLite.
 
-**Estado:** la API implementa registro, login, renombrado, logout y eliminación de cuenta. Flutter integra únicamente **registro, inicio de sesión y borrado**, conforme al alcance actual del usuario; el resto de endpoints se conserva sin cambios. La comprobación Maven de esta entrega completó 17 pruebas sin fallos ni errores y generó el JAR.
+**Estado:** la API implementa registro, login, renombrado, logout y eliminación de cuenta. Flutter integra únicamente **registro, inicio de sesión, cierre de sesión y borrado**, conforme al alcance actual del usuario; el resto de endpoints se conserva sin cambios. La comprobación Maven de esta entrega completó 17 pruebas sin fallos ni errores y generó el JAR.
 
 El cliente usa sesión solo en memoria, nombre y UUID de la cuenta en partidas locales, y borrado con contraseña actual y confirmación. La integración real Flutter → JAR se ejecutó correctamente desde el repositorio Flutter con una base y clave temporales: registro y login por interfaz, reinicio del cliente y del servidor, partida local y rechazo de login/token tras borrar. La suite normal de Flutter completó 296 pruebas; Android e iOS para simulador compilaron. Esta evidencia no acredita preparación para producción ni pruebas de teléfono físico o LAN.
 
@@ -17,7 +17,7 @@ El primer comando requiere JDK 21 o superior y acceso a Maven Central. El JAR us
 
 La documentación de trabajo se conserva localmente en `docs/`, excluida del repositorio. Los avisos de licencias están en [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 
-El proyecto Flutter se mantiene en su propio repositorio. La fase 1 móvil acordada comprende crear cuenta, iniciar sesión y eliminar cuenta. Renombrado y logout permanecen como capacidades de la API, fuera de esta entrega Flutter. Las salas y partidas en línea corresponden a una fase posterior.
+El proyecto Flutter se mantiene en su propio repositorio. La fase 1 móvil acordada comprende crear cuenta, iniciar sesión y eliminar cuenta. Renombrado permanece como capacidad de la API fuera de esta entrega Flutter. Logout se integró en el cliente el 3 de noviembre de 2026. Las salas y partidas en línea corresponden a una fase posterior.
 
 ## Actualización de contraseña: 3 de noviembre de 2026
 
@@ -30,3 +30,5 @@ java -jar target/brilliant-server-passwords.jar --server.address=0.0.0.0 --serve
 ```
 
 No ejecutar `mvn verify` sobre el mismo JAR que esté usando un servidor abierto; detener primero ese proceso o compilar en un directorio separado.
+
+El cierre de sesión Flutter utiliza el endpoint existente `POST /api/v1/auth/logout`. Se comprobó con el JAR que revoca solo la sesión actual, conserva otras sesiones y permite login de nuevo; el cliente limpia navegación y contempla salida local explícita si la red falla. Este ajuste no cambia código del servidor.
