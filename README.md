@@ -1,34 +1,35 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant, en Java 21+, Spring Boot, Spring Security y SQLite.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. Las salas y partidas en línea siguen pendientes.
 
-**Estado:** la API implementa registro, login, renombrado, logout y eliminación de cuenta. Flutter integra únicamente **registro, inicio de sesión, cierre de sesión y borrado**, conforme al alcance actual del usuario; el resto de endpoints se conserva sin cambios. La comprobación Maven de esta entrega completó 17 pruebas sin fallos ni errores y generó el JAR.
+## Arranque en la red local
 
-El cliente usa sesión solo en memoria, nombre y UUID de la cuenta en partidas locales, y borrado con contraseña actual y confirmación. La integración real Flutter → JAR se ejecutó correctamente desde el repositorio Flutter con una base y clave temporales: registro y login por interfaz, reinicio del cliente y del servidor, partida local y rechazo de login/token tras borrar. La suite normal de Flutter completó 296 pruebas; Android e iOS para simulador compilaron. Esta evidencia no acredita preparación para producción ni pruebas de teléfono físico o LAN.
-
-## Desarrollo
+En esta Mac, usar el Java 21 incluido en Android Studio. Java 24/25 falló al aceptar conexiones LAN incluso con un socket mínimo; con Java 21 el Samsung recibió HTTP 200 del servidor completo por Wi-Fi directo.
 
 ```sh
-./mvnw verify
-java -jar target/brilliant-server.jar
+cd /Users/alfredojimenez/developer/brilliant_game/brilliant_server
+"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" -jar target/brilliant-server-lan.jar --spring.profiles.active=lan
 ```
 
-El primer comando requiere JDK 21 o superior y acceso a Maven Central. El JAR usa por defecto `127.0.0.1:8080` y crea datos y clave de firma en `./data`. No subir ese directorio ni secretos al repositorio. Las variables disponibles están en `.env.example`; el programa no carga `.env` automáticamente. Producción exige configurar TLS.
+El perfil `lan` escucha en `0.0.0.0:8080` y muestra en terminal las direcciones que pueden introducirse en la app. Todos los dispositivos deben estar en la misma red Wi-Fi. En Brilliant Debug, abrir **Servidor**, escribir la dirección mostrada y pulsar **Guardar y conectar** una sola vez por dispositivo. Si cambia la IP, actualizarla allí. En el emulador Android de la misma Mac usar `10.0.2.2:8080`.
 
-La documentación de trabajo se conserva localmente en `docs/`, excluida del repositorio. Los avisos de licencias están en [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
+El JAR `target/brilliant-server-lan.jar` es una copia local verificada, generada por separado para evitar sobrescribir el JAR de un proceso activo. Se mantienen la base y la clave en `./data`; arrancar siempre desde esta carpeta para conservar las cuentas.
 
-El proyecto Flutter se mantiene en su propio repositorio. La fase 1 móvil acordada comprende crear cuenta, iniciar sesión y eliminar cuenta. Renombrado permanece como capacidad de la API fuera de esta entrega Flutter. Logout se integró en el cliente el 3 de noviembre de 2026. Las salas y partidas en línea corresponden a una fase posterior.
+## Compilación
 
-## Actualización de contraseña: 3 de noviembre de 2026
-
-Registro requiere **3–128 caracteres y al menos un carácter de puntuación o símbolo**, como `a!2`. Los espacios no cuentan como carácter especial. Se mantienen los controles de contraseñas comunes, Argon2id, límites de intentos y sesiones. Login y verificación de contraseña actual conservan compatibilidad con cuentas anteriores sin símbolo.
-
-Se verificaron **19 pruebas del servidor** y el recorrido Flutter → JAR de registro, login y borrado usando `a!2`. Para no sobrescribir el JAR de un proceso activo, esta actualización se compiló en una copia temporal y se dejó en `target/brilliant-server-passwords.jar`. Detener el servidor anterior antes de ejecutarlo, desde esta carpeta para conservar sus datos:
+Detener el proceso antes de reconstruir el JAR que esté usando, o compilar en otra carpeta:
 
 ```sh
-java -jar target/brilliant-server-passwords.jar --server.address=0.0.0.0 --server.port=8080
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./mvnw verify
+"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" -jar target/brilliant-server.jar --spring.profiles.active=lan
 ```
 
-No ejecutar `mvn verify` sobre el mismo JAR que esté usando un servidor abierto; detener primero ese proceso o compilar en un directorio separado.
+Sin el perfil `lan`, el servidor conserva la dirección predeterminada `127.0.0.1:8080`. Las variables disponibles están en `.env.example`; el programa no carga `.env` automáticamente. No subir datos ni secretos. Producción requiere TLS.
 
-El cierre de sesión Flutter utiliza el endpoint existente `POST /api/v1/auth/logout`. Se comprobó con el JAR que revoca solo la sesión actual, conserva otras sesiones y permite login de nuevo; el cliente limpia navegación y contempla salida local explícita si la red falla. Este ajuste no cambia código del servidor.
+## Verificación de conexión y cuentas
+
+Se comprobaron 20 pruebas Java, incluida una con cuatro clientes simultáneos que registran, inician sesión, cierran su sesión y eliminan su cuenta de forma independiente. También pasó el recorrido Flutter → JAR con configuración de dirección, persistencia de esa dirección al reiniciar el cliente, registro, login, logout y borrado. La comprobación física LAN se realizó desde un Samsung SM-N985F al servidor con Java 21. No sustituye una prueba con cuatro teléfonos ni implementa partidas en línea.
+
+Flutter conserva la sesión únicamente en memoria y guarda solo la dirección del servidor. Logout revoca la sesión actual y conserva otras sesiones. Borrado exige contraseña actual y confirmación. El resto de capacidades existentes de la API permanece disponible, sin ampliación de alcance móvil.
+
+La documentación de trabajo se conserva en `docs/`, excluida del repositorio. Los avisos de licencias están en [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).

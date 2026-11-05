@@ -69,6 +69,26 @@ class ApiIntegrationTest {
         assertEquals(200,login.status);
         assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",password),access(login)).status);
     }
+    @Test void fourClientsCanRegisterLoginLogoutAndDeleteIndependently() throws Exception {
+        try (var pool=Executors.newFixedThreadPool(4)) {
+            var futures=new ArrayList<Future<String>>();
+            for(int i=0;i<4;i++) futures.add(pool.submit(() -> {
+                String username=name();
+                Reply registered=register(username);
+                assertEquals(201,registered.status);
+                Reply logged=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+                assertEquals(200,logged.status);
+                assertEquals(204,request("POST","/auth/logout",null,access(logged)).status);
+                error(request("GET","/users/me",null,access(logged)),401,"SESSION_INVALID");
+                assertEquals(200,request("GET","/users/me",null,access(registered)).status);
+                assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(registered)).status);
+                return registered.body.at("/user/id").asText();
+            }));
+            var users=new HashSet<String>();
+            for(var future:futures) users.add(future.get(30,TimeUnit.SECONDS));
+            assertEquals(4,users.size());
+        }
+    }
     @BeforeEach void clear() {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");
