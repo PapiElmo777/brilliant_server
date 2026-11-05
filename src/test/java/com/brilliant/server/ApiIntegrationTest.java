@@ -30,6 +30,7 @@ class ApiIntegrationTest {
         r.add("app.data-dir",DATA::toString);
         r.add("app.register-ip-limit",()->10000); r.add("app.login-ip-limit",()->10000);
         r.add("app.account-limit",()->10000);
+        r.add("app.record-test-accounts",()->true);
     }
     static class TestClock extends Clock {
         volatile Instant now=Instant.parse("2026-11-02T00:00:00Z");
@@ -53,6 +54,7 @@ class ApiIntegrationTest {
         String name=name();
         Reply registered=request("POST","/auth/register",Map.of("username",name,"password","a!2"),null);
         assertEquals(201,registered.status);
+        assertEquals(204,request("POST","/auth/logout",null,access(registered)).status);
         Reply login=request("POST","/auth/login",Map.of("username",name,"password","a!2"),null);
         assertEquals(200,login.status);
         assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword","a!2"),access(login)).status);
@@ -76,12 +78,15 @@ class ApiIntegrationTest {
                 String username=name();
                 Reply registered=register(username);
                 assertEquals(201,registered.status);
+                assertEquals(204,request("POST","/auth/logout",null,access(registered)).status);
                 Reply logged=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
                 assertEquals(200,logged.status);
                 assertEquals(204,request("POST","/auth/logout",null,access(logged)).status);
                 error(request("GET","/users/me",null,access(logged)),401,"SESSION_INVALID");
-                assertEquals(200,request("GET","/users/me",null,access(registered)).status);
-                assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(registered)).status);
+                error(request("GET","/users/me",null,access(registered)),401,"SESSION_INVALID");
+                Reply again=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+                assertEquals(200,again.status);
+                assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(again)).status);
                 return registered.body.at("/user/id").asText();
             }));
             var users=new HashSet<String>();
@@ -89,9 +94,10 @@ class ApiIntegrationTest {
             assertEquals(4,users.size());
         }
     }
-    @BeforeEach void clear() {
+    @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");
+        Files.writeString(DATA.resolve("cuentas-prueba.json"),"{}");
     }
     Reply request(String method,String route,Object body,String token) throws Exception {
         var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1"+route)).timeout(Duration.ofSeconds(30));
@@ -106,22 +112,44 @@ class ApiIntegrationTest {
     Reply register() throws Exception { Reply r=register(name());assertEquals(201,r.status,r.body.toString());return r; }
     String access(Reply r) { return r.body.path("accessToken").asText(); }
     String refresh(Reply r) { return r.body.path("refreshToken").asText(); }
+    @Test void localTestFileRecordsOnlySuccessfulAccountsAndRemovesDeletedAccount() throws Exception {
+        String username=name(),password=" a!2\"\\🚀 ";
+        Reply first=request("POST","/auth/register",Map.of("username",username,"password",password),null);
+        assertEquals(201,first.status);
+        String id=first.body.path("user").path("id").asText();
+        var file=DATA.resolve("cuentas-prueba.json");
+        var entries=json.readTree(file.toFile());
+        assertEquals(username,entries.path(id).path("usuario").asText());
+        assertEquals(password,entries.path(id).path("contrasena").asText());
+        assertEquals(204,request("POST","/auth/logout",null,access(first)).status);
+        Files.writeString(file,"{}");
+        error(request("POST","/auth/login",Map.of("username",username,"password","wrong!"),null),401,"INVALID_CREDENTIALS");
+        assertEquals(0,json.readTree(file.toFile()).size());
+        Reply logged=request("POST","/auth/login",Map.of("username",username,"password",password),null);
+        assertEquals(200,logged.status);
+        assertEquals(password,json.readTree(file.toFile()).path(id).path("contrasena").asText());
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",password),access(logged)).status);
+        assertEquals(0,json.readTree(file.toFile()).size());
+        if(Files.getFileStore(file).supportsFileAttributeView("posix"))
+            assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),Files.getPosixFilePermissions(file));
+    }
     void error(Reply r,int status,String code) { assertEquals(status,r.status,r.body.toString());assertEquals(code,r.body.path("error").path("code").asText());assertFalse(r.body.path("requestId").asText().isEmpty()); }
     @Test void lifecycleAndCascade() throws Exception {
         String name=name();Reply first=register(name);assertEquals(201,first.status);
         assertEquals(600,first.body.path("expiresIn").asInt());
         String id=first.body.path("user").path("id").asText();UUID.fromString(id);
+        error(request("POST","/auth/login",Map.of("username"," "+name.toUpperCase(Locale.ROOT)+" ","password",PASSWORD),null),409,"SESSION_ALREADY_ACTIVE");
         assertEquals(200,request("GET","/users/me",null,access(first)).status);
-        Reply second=request("POST","/auth/login",Map.of("username"," "+name.toUpperCase(Locale.ROOT)+" ","password",PASSWORD),null);
-        assertEquals(200,second.status);
         error(request("PATCH","/users/me",Map.of("username","NuevoNombre","currentPassword","otra clave equivocada"),access(first)),403,"CURRENT_PASSWORD_INVALID");
         Reply renamed=request("PATCH","/users/me",Map.of("username","NuevoNombre","currentPassword",PASSWORD),access(first));
         assertEquals(200,renamed.status);assertEquals(id,renamed.body.path("id").asText());
-        assertEquals("NuevoNombre",request("GET","/users/me",null,access(second)).body.path("username").asText());
         error(request("POST","/auth/login",Map.of("username",name,"password",PASSWORD),null),401,"INVALID_CREDENTIALS");
-        assertEquals(200,request("POST","/auth/login",Map.of("username","nuevonombre","password",PASSWORD),null).status);
-        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(first)).status);
-        error(request("GET","/users/me",null,access(second)),401,"SESSION_INVALID");
+        error(request("POST","/auth/login",Map.of("username","nuevonombre","password",PASSWORD),null),409,"SESSION_ALREADY_ACTIVE");
+        assertEquals(204,request("POST","/auth/logout",null,access(first)).status);
+        Reply second=request("POST","/auth/login",Map.of("username","nuevonombre","password",PASSWORD),null);
+        assertEquals(200,second.status);
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(second)).status);
+        error(request("GET","/users/me",null,access(first)),401,"SESSION_INVALID");
         error(request("POST","/auth/refresh",Map.of("refreshToken",refresh(second)),null),401,"SESSION_INVALID");
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM sessions",Integer.class));
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM refresh_tokens",Integer.class));
@@ -147,13 +175,61 @@ class ApiIntegrationTest {
         error(request("POST","/auth/refresh",Map.of("refreshToken",refresh(rotated)),null),401,"SESSION_INVALID");
         assertNotNull(db.queryForObject("SELECT revoked_at FROM sessions",String.class));
     }
-    @Test void logoutIsImmediateIdempotentAndSessionScoped() throws Exception {
+    @Test void logoutIsImmediateIdempotentAndDoesNotCloseLaterSession() throws Exception {
         Reply r=register();String username=r.body.path("user").path("username").asText();
-        Reply other=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+        error(request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null),409,"SESSION_ALREADY_ACTIVE");
         assertEquals(204,request("POST","/auth/logout",null,access(r)).status);
+        Reply other=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+        assertEquals(200,other.status);
         assertEquals(204,request("POST","/auth/logout",null,access(r)).status);
         error(request("GET","/users/me",null,access(r)),401,"SESSION_INVALID");
         assertEquals(200,request("GET","/users/me",null,access(other)).status);
+    }
+    @Test void concurrentLoginAllowsExactlyOneDevice() throws Exception {
+        Reply r=register();String username=r.body.path("user").path("username").asText();
+        assertEquals(204,request("POST","/auth/logout",null,access(r)).status);
+        Callable<Reply> login=()->request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+        var replies=parallel(login,login);
+        assertEquals(List.of(200,409),replies.stream().map(Reply::status).sorted().toList());
+        Reply winner=replies.stream().filter(x->x.status==200).findFirst().orElseThrow();
+        assertEquals(200,request("GET","/users/me",null,access(winner)).status);
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM sessions WHERE revoked_at IS NULL",Integer.class));
+        error(request("POST","/auth/refresh",Map.of("refreshToken",refresh(r)),null),401,"SESSION_INVALID");
+    }
+    @Test void presenceKeepsFirstSessionAndIdleSessionCannotRevive() throws Exception {
+        Reply first=register();String username=first.body.path("user").path("username").asText();
+        clock.now=clock.now.plusSeconds(44);
+        assertEquals(200,request("GET","/users/me",null,access(first)).status);
+        clock.now=clock.now.plusSeconds(44);
+        error(request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null),409,"SESSION_ALREADY_ACTIVE");
+        assertEquals(200,request("GET","/users/me",null,access(first)).status);
+        clock.now=clock.now.plusSeconds(45);
+        error(request("GET","/users/me",null,access(first)),401,"SESSION_INVALID");
+        Reply second=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
+        assertEquals(200,second.status);
+        error(request("GET","/users/me",null,access(first)),401,"SESSION_INVALID");
+        error(request("POST","/auth/refresh",Map.of("refreshToken",refresh(first)),null),401,"SESSION_INVALID");
+        assertEquals(200,request("GET","/users/me",null,access(second)).status);
+    }
+    @Test void failedLoginAndFailedNewSessionPreserveExistingAccount() throws Exception {
+        Reply first=register();String username=first.body.path("user").path("username").asText();
+        error(request("POST","/auth/login",Map.of("username",username,"password","wrong!"),null),401,"INVALID_CREDENTIALS");
+        assertEquals(200,request("GET","/users/me",null,access(first)).status);
+        clock.now=clock.now.plusSeconds(45);
+        db.execute("CREATE TRIGGER fail_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'test rollback'); END");
+        try { assertEquals(503,request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null).status); }
+        finally { db.execute("DROP TRIGGER fail_session"); }
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM sessions WHERE revoked_at IS NULL",Integer.class));
+        assertEquals(200,request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null).status);
+    }
+    @Test void expiredAccessTokenDoesNotKeepAccountLocked() throws Exception {
+        Reply first=register();String username=first.body.path("user").path("username").asText();
+        clock.now=clock.now.plusSeconds(599);
+        db.update("UPDATE sessions SET last_seen_at=?",clock.now.toString());
+        assertEquals(200,request("GET","/users/me",null,access(first)).status);
+        clock.now=clock.now.plusSeconds(1);
+        assertEquals(200,request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null).status);
+        error(request("POST","/auth/refresh",Map.of("refreshToken",refresh(first)),null),401,"SESSION_INVALID");
     }
     @Test void concurrentRegistrationHasOneWinner() throws Exception {
         String name=name();List<Reply> results=parallel(()->register(name),()->register(name.toUpperCase(Locale.ROOT)));
@@ -212,6 +288,8 @@ class ApiIntegrationTest {
         String name=name(),password=" 🚀".repeat(15)+" ";
         Reply r=request("POST","/auth/register",Map.of("username",name,"password",password),null);assertEquals(201,r.status);
         error(request("POST","/auth/login",Map.of("username",name,"password",password.strip()),null),401,"INVALID_CREDENTIALS");
+        error(request("POST","/auth/login",Map.of("username",name,"password",password),null),409,"SESSION_ALREADY_ACTIVE");
+        assertEquals(204,request("POST","/auth/logout",null,access(r)).status);
         assertEquals(200,request("POST","/auth/login",Map.of("username",name,"password",password),null).status);
     }
     @Test void renameConflictKeepsIdentity() throws Exception {
@@ -239,11 +317,13 @@ class ApiIntegrationTest {
         error(request("GET","/users/me",null,signed(r,"brilliant-game",clock.instant().minusSeconds(1))),401,"ACCESS_TOKEN_EXPIRED");
         error(request("GET","/users/me",null,signed(r,"wrong-audience",clock.instant().plusSeconds(300))),401,"UNAUTHORIZED");
         clock.now=clock.now.plusSeconds(601);
+        db.update("UPDATE sessions SET last_seen_at=?",clock.now.toString());
         error(request("GET","/users/me",null,access(r)),401,"ACCESS_TOKEN_EXPIRED");
         assertEquals(200,request("POST","/auth/refresh",Map.of("refreshToken",refresh(r)),null).status);
     }
     @Test void absoluteSessionExpiryDoesNotSlide() throws Exception {
         Reply r=register();clock.now=clock.now.plus(Duration.ofDays(29));
+        db.update("UPDATE sessions SET last_seen_at=?",clock.now.toString());
         Reply renew=request("POST","/auth/refresh",Map.of("refreshToken",refresh(r)),null);assertEquals(200,renew.status);
         assertEquals(r.body.path("refreshExpiresAt"),renew.body.path("refreshExpiresAt"));
         clock.now=clock.now.plus(Duration.ofDays(2));

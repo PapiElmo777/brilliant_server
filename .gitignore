@@ -1,5 +1,7 @@
 /target/
 /data/
+cuentas-prueba.json
+.cuentas-prueba-*.tmp
 .env
 .env.*
 !.env.example

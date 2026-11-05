@@ -26,20 +26,24 @@ public class AuthService {
     private final Clock clock;
     private final JwtEncoder encoder;
     private final RateLimits limits;
+    private final TestAccountsFile testAccounts;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,TransactionTemplate tx,Accounts accounts,Credentials credentials,Settings.Values settings,Clock clock,JwtEncoder encoder,RateLimits limits) {
+    public AuthService(JdbcTemplate db,TransactionTemplate tx,Accounts accounts,Credentials credentials,Settings.Values settings,Clock clock,JwtEncoder encoder,RateLimits limits,TestAccountsFile testAccounts) {
         this.db=db;this.tx=tx;this.accounts=accounts;this.credentials=credentials;this.settings=settings;this.clock=clock;this.encoder=encoder;this.limits=limits;
+        this.testAccounts=testAccounts;
     }
     public AuthSession register(String name,String password,String ip) {
         limits.hit("register:"+ip,settings.registerIpLimit(),Duration.ofHours(1));
         String username=credentials.username(name);credentials.newPassword(password);
         String hash=credentials.hash(password); // Argon2 fuera de la escritura
         try {
-            return Database.write(tx,() -> {
+            AuthSession result=Database.write(tx,() -> {
                 String id=UUID.randomUUID().toString(),now=clock.instant().toString();
                 db.update("INSERT INTO users VALUES (?,?,?,?,?,?)",id,username,credentials.normalized(username),hash,now,now);
                 return start(accounts.byId(id));
             });
+            testAccounts.remember(result.user().id(),password);
+            return result;
         } catch(org.springframework.dao.DataAccessException e) { if(Database.usernameConflict(e)) throw new ApiException(409,"USERNAME_UNAVAILABLE"); throw e; }
     }
     public AuthSession login(String name,String password,String ip) {
@@ -51,17 +55,26 @@ public class AuthService {
         Stored stored=accounts.byName(credentials.normalized(username));
         if(!credentials.matches(password,stored==null?null:stored.passwordHash())) throw new ApiException(401,"INVALID_CREDENTIALS");
         limits.refund(key);
-        return Database.write(tx,() -> {
+        AuthSession result=Database.write(tx,() -> {
             Stored current=accounts.byId(stored.user().id());
             if(current==null || !current.passwordHash().equals(stored.passwordHash())
                     || !credentials.normalized(current.user().username()).equals(credentials.normalized(username)))
                 throw new ApiException(401,"INVALID_CREDENTIALS");
             return start(current);
         });
+        testAccounts.remember(result.user().id(),password);
+        return result;
     }
     private AuthSession start(Stored user) {
         String sid=UUID.randomUUID().toString(); Instant now=clock.instant(),expires=now.plusSeconds(settings.sessionSeconds());
-        db.update("INSERT INTO sessions VALUES (?,?,?,?,NULL)",sid,user.user().id(),now.toString(),expires.toString());
+        var sessions=db.queryForList("SELECT expires_at,last_seen_at,(SELECT r.created_at FROM refresh_tokens r WHERE r.session_id=s.id ORDER BY r.rowid DESC LIMIT 1) AS token_issued_at FROM sessions s WHERE user_id=? AND revoked_at IS NULL",user.user().id());
+        if(sessions.stream().anyMatch(row -> Instant.parse((String)row.get("expires_at")).isAfter(now)
+                && Instant.parse((String)row.get("last_seen_at")).plusSeconds(Accounts.IDLE_SECONDS).isAfter(now)
+                && row.get("token_issued_at")!=null
+                && Instant.parse((String)row.get("token_issued_at")).plusSeconds(settings.accessSeconds()).isAfter(now)))
+            throw new ApiException(409,"SESSION_ALREADY_ACTIVE");
+        db.update("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",now.toString(),user.user().id());
+        db.update("INSERT INTO sessions(id,user_id,created_at,expires_at,revoked_at,last_seen_at) VALUES (?,?,?,?,NULL,?)",sid,user.user().id(),now.toString(),expires.toString(),now.toString());
         return issue(user.user(),sid,expires);
     }
     private AuthSession issue(User user,String sid,Instant expires) {
@@ -101,7 +114,13 @@ public class AuthService {
         });
     }
     private void revoke(String sid) { db.update("UPDATE sessions SET revoked_at=COALESCE(revoked_at,?) WHERE id=?",clock.instant().toString(),sid); }
-    public User me(String user,String sid) { return accounts.requireActive(user,sid).user(); }
+    public User me(String user,String sid) {
+        return Database.write(tx,() -> {
+            User current=accounts.requireActive(user,sid).user();
+            db.update("UPDATE sessions SET last_seen_at=? WHERE id=? AND revoked_at IS NULL",clock.instant().toString(),sid);
+            return current;
+        });
+    }
     private Stored verify(String user,String sid,String password) {
         limits.hit("account:"+user,settings.accountLimit(),Duration.ofMinutes(15));
         credentials.passwordInput(password);
@@ -112,12 +131,14 @@ public class AuthService {
     public User rename(String user,String sid,String name,String password) {
         String username=credentials.username(name);Stored verified=verify(user,sid,password);
         try {
-            return Database.write(tx,() -> {
+            User result=Database.write(tx,() -> {
                 Stored current=accounts.requireActive(user,sid);
                 if(!current.passwordHash().equals(verified.passwordHash())) throw new ApiException(401,"SESSION_INVALID");
                 db.update("UPDATE users SET username=?,username_normalized=?,updated_at=? WHERE id=?",username,credentials.normalized(username),clock.instant().toString(),user);
                 return accounts.byId(user).user();
             });
+            testAccounts.remember(user,password);
+            return result;
         } catch(org.springframework.dao.DataAccessException e) { if(Database.usernameConflict(e)) throw new ApiException(409,"USERNAME_UNAVAILABLE"); throw e; }
     }
     public void delete(String user,String sid,String password) {
@@ -130,6 +151,7 @@ public class AuthService {
             if(db.update("DELETE FROM users WHERE id=?",user)!=1) throw new ApiException(401,"SESSION_INVALID");
             return null;
         });
+        testAccounts.forget(user);
     }
     public static String sha256(String secret) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(secret.getBytes(StandardCharsets.UTF_8))); }

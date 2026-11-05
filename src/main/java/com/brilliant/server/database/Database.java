@@ -49,15 +49,17 @@ public class Database {
             tx.executeWithoutResult(status -> {
                 jdbc.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL)");
                 try {
-                    String sql = new ClassPathResource("db/migration/V001__accounts.sql").getContentAsString(StandardCharsets.UTF_8);
-                    String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(sql.getBytes(StandardCharsets.UTF_8)));
                     var versions = jdbc.queryForList("SELECT version FROM schema_migrations", Integer.class);
-                    if (versions.stream().anyMatch(v -> v != 1)) throw new IllegalStateException("Versión de base no soportada");
-                    if (versions.isEmpty()) {
-                        for (String statement : sql.split(";")) if (!statement.isBlank()) jdbc.execute(statement);
-                        jdbc.update("INSERT INTO schema_migrations VALUES (1, ?)", checksum);
-                    } else if (!checksum.equals(jdbc.queryForObject("SELECT checksum FROM schema_migrations WHERE version=1", String.class)))
-                        throw new IllegalStateException("La migración aplicada fue modificada");
+                    if (versions.stream().anyMatch(v -> v != 1 && v != 2)) throw new IllegalStateException("Versión de base no soportada");
+                    for (var migration : java.util.Map.of(1,"V001__accounts.sql",2,"V002__single_session.sql").entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).toList()) {
+                        String sql = new ClassPathResource("db/migration/"+migration.getValue()).getContentAsString(StandardCharsets.UTF_8);
+                        String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(sql.getBytes(StandardCharsets.UTF_8)));
+                        if (!versions.contains(migration.getKey())) {
+                            for (String statement : sql.split(";")) if (!statement.isBlank()) jdbc.execute(statement);
+                            jdbc.update("INSERT INTO schema_migrations VALUES (?, ?)",migration.getKey(),checksum);
+                        } else if (!checksum.equals(jdbc.queryForObject("SELECT checksum FROM schema_migrations WHERE version=?",String.class,migration.getKey())))
+                            throw new IllegalStateException("La migración aplicada fue modificada");
+                    }
                 } catch (Exception e) { throw new IllegalStateException("Falló la migración", e); }
             });
             if(env.getProperty("app.rotate-key",Boolean.class,false))

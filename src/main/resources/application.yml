@@ -24,6 +24,7 @@ logging:
     root: WARN
     com.brilliant.server: INFO
 app:
+  record-test-accounts: ${RECORD_TEST_ACCOUNTS:false}
   data-dir: ${DATA_DIR:./data}
   database-url: ${DATABASE_URL:}
   issuer: ${JWT_ISSUER:brilliant-server}

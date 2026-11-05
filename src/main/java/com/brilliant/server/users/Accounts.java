@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class Accounts {
+    public static final long IDLE_SECONDS = 45;
     public record User(String id,String username,String createdAt,String updatedAt) {}
     public record Stored(User user,String passwordHash) {}
     private final JdbcTemplate db;
@@ -27,8 +28,9 @@ public class Accounts {
         return stored;
     }
     public boolean active(String user,String session,boolean allowRevoked) {
-        var rows=db.queryForList("SELECT s.expires_at, s.revoked_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.id=?",session,user);
+        var rows=db.queryForList("SELECT s.expires_at, s.revoked_at,s.last_seen_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.id=?",session,user);
         return rows.size()==1 && Instant.parse((String)rows.getFirst().get("expires_at")).isAfter(clock.instant())
-            && (allowRevoked || rows.getFirst().get("revoked_at")==null);
+            && (allowRevoked || (rows.getFirst().get("revoked_at")==null
+                && Instant.parse((String)rows.getFirst().get("last_seen_at")).plusSeconds(IDLE_SECONDS).isAfter(clock.instant())));
     }
 }
