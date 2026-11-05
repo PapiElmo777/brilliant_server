@@ -1,0 +1,3 @@
+# Demostración en la red local. Arranque: --spring.profiles.active=lan
+server:
+  address: 0.0.0.0
