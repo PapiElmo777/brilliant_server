@@ -8,7 +8,7 @@ En esta Mac, usar el Java 21 incluido en Android Studio. Java 24/25 falló al ac
 
 ```sh
 cd /Users/alfredojimenez/developer/brilliant_game/brilliant_server
-"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" -jar target/brilliant-server-accounts.jar --spring.profiles.active=lan
+"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" -jar target/brilliant-server.jar --spring.profiles.active=lan
 ```
 
 El perfil `lan` escucha en `0.0.0.0:8080`. En cada arranque aparece un bloque **CONEXIÓN A BRILLIANT** con la IP actual de cada interfaz de red, el puerto real y la dirección completa para escribir en **Servidor** dentro de la app. También indica `10.0.2.2` para el emulador Android en esta computadora. La IP se consulta de nuevo al arrancar; no está fijada en el código. Si hay varias interfaces, usar la dirección de la red compartida con el teléfono. Todos los dispositivos deben estar en la misma red Wi-Fi. En Brilliant Debug, abrir **Servidor**, escribir la dirección mostrada y pulsar **Guardar y conectar** una sola vez por dispositivo. Si cambia la IP, actualizarla allí. En el emulador Android de la misma Mac usar `10.0.2.2:8080`.
@@ -51,3 +51,9 @@ Con el perfil `lan` se crea **`data/cuentas-prueba.json`**, exclusivamente para 
 `data/` y el nombre `cuentas-prueba.json` están excluidos explícitamente de Git; el archivo tiene permisos solo para su propietario y se reemplaza de forma atómica. No se imprimen contraseñas en la consola ni se añaden a respuestas HTTP. Fuera de `lan` está desactivado de forma predeterminada. `RECORD_TEST_ACCOUNTS=false` lo desactiva; `true` lo activa en desarrollo. Con `PRODUCTION=true`, activar este archivo impide el arranque.
 
 Verificación: **29 pruebas Java**, **352 pruebas Flutter**, análisis sin avisos, APK Android Debug generado y recorrido real Flutter → JAR correcto. Incluye exclusión concurrente, actividad/caducidad, rollback, actualización de una base V001 y reapertura V002, archivo de pruebas, permisos, Unicode, eliminación y escrituras concurrentes. Las pruebas usan bases, claves y credenciales temporales.
+
+## Comprobación en Samsung y emulador: 5 de noviembre de 2026
+
+Se diagnosticó que seguía abierto `target/brilliant-server-lan.jar` anterior a la exclusión de sesiones. Se respaldó SQLite en `backups/` y se actualizaron, con el servidor detenido, los artefactos locales `brilliant-server.jar`, `brilliant-server-lan.jar` y `brilliant-server-ip.jar` a la compilación verificada de cuentas. Para los próximos arranques se recomienda el nombre estándar **`target/brilliant-server.jar`**, que Maven genera y actualiza al compilar, evitando elegir un artefacto histórico. Los JAR siguen excluidos de Git.
+
+El servidor actualizado arrancó sobre la base existente con migración V002. Se probó con una cuenta temporal usando peticiones desde el Samsung SM-N985F por Wi-Fi y el emulador Android: registro Samsung 201, login emulador 409 SESSION_ALREADY_ACTIVE, sesión original Samsung 200, logout Samsung 204, login emulador 200 y token anterior Samsung 401. La cuenta temporal se eliminó con 204. Se comprobó también que ambas apps tenían guardada la dirección del mismo servidor. Esta prueba comprueba el acceso HTTP real desde ambos dispositivos; no representa una partida multijugador sincronizada.
