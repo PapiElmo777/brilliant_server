@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:brilliant:multiplayer:v1",
+  "title": "Brilliant multiplayer v1 command and event envelopes",
+  "$comment": "Reference a specific $defs schema for each endpoint; domain validation and member authorization are mandatory on the server. Payload snapshots are defined in multiplayer-v1.md.",
+  "$defs": {
+    "emptyCommand": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "commandId"
+      ],
+      "additionalProperties": false
+    },
+    "createRoom": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "commandId",
+        "name",
+        "capacity"
+      ],
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        },
+        "levelId": {
+          "enum": [
+            "tablero_01",
+            "tablero_02",
+            "tablero_03",
+            "tablero_04"
+          ]
+        }
+      },
+      "required": [
+        "commandId",
+        "expectedRevision",
+        "capacity",
+        "levelId"
+      ],
+      "additionalProperties": false
+    },
+    "configurationCommand": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "commandId",
+        "expectedRevision"
+      ],
+      "additionalProperties": false
+    },
+    "ready": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "commandId",
+        "expectedRevision",
+        "ready"
+      ],
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "commandId",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "preparation": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "placements": {
+          "type": "object",
+          "minProperties": 6,
+          "maxProperties": 6,
+          "propertyNames": {
+            "pattern": "^f[1-7]_c[1-7]$"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          }
+        }
+      },
+      "required": [
+        "commandId",
+        "placements"
+      ],
+      "additionalProperties": false
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "const": "PLACE"
+            },
+            "dieIndex": {
+              "enum": [
+                0,
+                1
+              ]
+            },
+            "cellId": {
+              "type": "string",
+              "pattern": "^f[1-7]_c[1-7]$"
+            }
+          },
+          "required": [
+            "commandId",
+            "kind",
+            "dieIndex",
+            "cellId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "const": "SKIP"
+            }
+          },
+          "required": [
+            "commandId",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ballot": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voteId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "approve": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "commandId",
+        "voteId",
+        "approve"
+      ],
+      "additionalProperties": false
+    },
+    "roomState": {
+      "enum": [
+        "LOBBY",
+        "PREPARING",
+        "PLAYING",
+        "FINISHED",
+        "CLOSED"
+      ]
+    },
+    "matchState": {
+      "enum": [
+        "PREPARING",
+        "ROUND_ACTIVE",
+        "END_VOTE",
+        "FINISHED",
+        "CANCELLED"
+      ]
+    },
+    "commandResponse": {
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "roomId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "commandId",
+        "roomId",
+        "sequence",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "roomId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "enum": [
+            "MEMBER_JOINED",
+            "MEMBER_LEFT",
+            "HOST_CHANGED",
+            "SETTINGS_CHANGED",
+            "READY_CHANGED",
+            "MATCH_STARTED",
+            "PREPARATION_CONFIRMED",
+            "ROUND_STARTED",
+            "ACTION_RESOLVED",
+            "ZONE_CLAIMED",
+            "MESSAGE_CREATED",
+            "END_VOTE_OPENED",
+            "END_VOTE_UPDATED",
+            "END_VOTE_RESOLVED",
+            "MATCH_FINISHED"
+          ]
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "roomId",
+        "sequence",
+        "type",
+        "serverTime",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,1586 @@
+{
+  "rulesVersion": 1,
+  "boards": [
+    {
+      "id": "tablero_01",
+      "zones": [
+        {
+          "id": "amarillo",
+          "rule": "YELLOW",
+          "prizes": [
+            8,
+            6,
+            4
+          ],
+          "cells": [
+            {
+              "id": "f1_c1",
+              "row": 0,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f1_c7",
+              "row": 0,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f4_c4",
+              "row": 3,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f7_c1",
+              "row": 6,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f7_c7",
+              "row": 6,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "verde_1",
+          "rule": "GREEN",
+          "prizes": [
+            4,
+            3,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f1_c2",
+              "row": 0,
+              "column": 1,
+              "initial": true
+            },
+            {
+              "id": "f2_c1",
+              "row": 1,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f2_c2",
+              "row": 1,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f3_c1",
+              "row": 2,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f4_c1",
+              "row": 3,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f5_c1",
+              "row": 4,
+              "column": 0,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "azul_1",
+          "rule": "BLUE",
+          "prizes": [
+            7,
+            6,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f1_c3",
+              "row": 0,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f2_c3",
+              "row": 1,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f2_c4",
+              "row": 1,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f3_c4",
+              "row": 2,
+              "column": 3,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "morado_1",
+          "rule": "PURPLE",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f1_c4",
+              "row": 0,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f1_c5",
+              "row": 0,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f1_c6",
+              "row": 0,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f2_c5",
+              "row": 1,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f2_c6",
+              "row": 1,
+              "column": 5,
+              "initial": true
+            },
+            {
+              "id": "f3_c5",
+              "row": 2,
+              "column": 4,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "verde_2",
+          "rule": "GREEN",
+          "prizes": [
+            4,
+            3,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f2_c7",
+              "row": 1,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f3_c6",
+              "row": 2,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f3_c7",
+              "row": 2,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f4_c5",
+              "row": 3,
+              "column": 4,
+              "initial": true
+            },
+            {
+              "id": "f4_c6",
+              "row": 3,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f4_c7",
+              "row": 3,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_1",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f3_c2",
+              "row": 2,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f3_c3",
+              "row": 2,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f4_c2",
+              "row": 3,
+              "column": 1,
+              "initial": true
+            },
+            {
+              "id": "f5_c2",
+              "row": 4,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f6_c1",
+              "row": 5,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f6_c2",
+              "row": 5,
+              "column": 1,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "morado_2",
+          "rule": "PURPLE",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f4_c3",
+              "row": 3,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f5_c3",
+              "row": 4,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f5_c4",
+              "row": 4,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c3",
+              "row": 5,
+              "column": 2,
+              "initial": true
+            },
+            {
+              "id": "f7_c2",
+              "row": 6,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f7_c3",
+              "row": 6,
+              "column": 2,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_2",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f5_c5",
+              "row": 4,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f5_c6",
+              "row": 4,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f6_c4",
+              "row": 5,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c5",
+              "row": 5,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f7_c4",
+              "row": 6,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f7_c5",
+              "row": 6,
+              "column": 4,
+              "initial": true
+            }
+          ]
+        },
+        {
+          "id": "azul_2",
+          "rule": "BLUE",
+          "prizes": [
+            7,
+            6,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f5_c7",
+              "row": 4,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f6_c6",
+              "row": 5,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f6_c7",
+              "row": 5,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f7_c6",
+              "row": 6,
+              "column": 5,
+              "initial": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tablero_02",
+      "zones": [
+        {
+          "id": "morado_1",
+          "rule": "PURPLE",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f1_c1",
+              "row": 0,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f1_c2",
+              "row": 0,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f1_c3",
+              "row": 0,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f2_c1",
+              "row": 1,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f3_c1",
+              "row": 2,
+              "column": 0,
+              "initial": true
+            }
+          ]
+        },
+        {
+          "id": "blanco",
+          "rule": "WHITE",
+          "prizes": [
+            3,
+            2,
+            1
+          ],
+          "cells": [
+            {
+              "id": "f1_c4",
+              "row": 0,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f7_c4",
+              "row": 6,
+              "column": 3,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "verde_1",
+          "rule": "GREEN",
+          "prizes": [
+            4,
+            3,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f1_c5",
+              "row": 0,
+              "column": 4,
+              "initial": true
+            },
+            {
+              "id": "f1_c6",
+              "row": 0,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f1_c7",
+              "row": 0,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f2_c7",
+              "row": 1,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f3_c7",
+              "row": 2,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "amarillo",
+          "rule": "YELLOW",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f2_c2",
+              "row": 1,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f2_c6",
+              "row": 1,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f4_c4",
+              "row": 3,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c2",
+              "row": 5,
+              "column": 1,
+              "initial": true
+            },
+            {
+              "id": "f6_c6",
+              "row": 5,
+              "column": 5,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "azul_1",
+          "rule": "BLUE",
+          "prizes": [
+            7,
+            6,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f2_c3",
+              "row": 1,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f2_c4",
+              "row": 1,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f2_c5",
+              "row": 1,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f3_c4",
+              "row": 2,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f3_c5",
+              "row": 2,
+              "column": 4,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_1",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f3_c2",
+              "row": 2,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f3_c3",
+              "row": 2,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f4_c1",
+              "row": 3,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f4_c2",
+              "row": 3,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f4_c3",
+              "row": 3,
+              "column": 2,
+              "initial": true
+            },
+            {
+              "id": "f5_c2",
+              "row": 4,
+              "column": 1,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_2",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f3_c6",
+              "row": 2,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f4_c5",
+              "row": 3,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f4_c6",
+              "row": 3,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f4_c7",
+              "row": 3,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f5_c5",
+              "row": 4,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f5_c6",
+              "row": 4,
+              "column": 5,
+              "initial": true
+            }
+          ]
+        },
+        {
+          "id": "verde_2",
+          "rule": "GREEN",
+          "prizes": [
+            4,
+            3,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f5_c1",
+              "row": 4,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f6_c1",
+              "row": 5,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f7_c1",
+              "row": 6,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f7_c2",
+              "row": 6,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f7_c3",
+              "row": 6,
+              "column": 2,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "azul_2",
+          "rule": "BLUE",
+          "prizes": [
+            7,
+            6,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f5_c3",
+              "row": 4,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f5_c4",
+              "row": 4,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c3",
+              "row": 5,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f6_c4",
+              "row": 5,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c5",
+              "row": 5,
+              "column": 4,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "morado_2",
+          "rule": "PURPLE",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f5_c7",
+              "row": 4,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f6_c7",
+              "row": 5,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f7_c5",
+              "row": 6,
+              "column": 4,
+              "initial": true
+            },
+            {
+              "id": "f7_c6",
+              "row": 6,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f7_c7",
+              "row": 6,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tablero_03",
+      "zones": [
+        {
+          "id": "amarillo",
+          "rule": "YELLOW",
+          "prizes": [
+            7,
+            5,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f1_c1",
+              "row": 0,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f1_c2",
+              "row": 0,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f1_c6",
+              "row": 0,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f1_c7",
+              "row": 0,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f2_c2",
+              "row": 1,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f2_c6",
+              "row": 1,
+              "column": 5,
+              "initial": true
+            }
+          ]
+        },
+        {
+          "id": "morado_1",
+          "rule": "PURPLE",
+          "prizes": [
+            7,
+            5,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f1_c3",
+              "row": 0,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f1_c5",
+              "row": 0,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f2_c3",
+              "row": 1,
+              "column": 2,
+              "initial": true
+            },
+            {
+              "id": "f2_c4",
+              "row": 1,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f2_c5",
+              "row": 1,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f3_c4",
+              "row": 2,
+              "column": 3,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "blanco",
+          "rule": "WHITE",
+          "prizes": [
+            8,
+            6,
+            4
+          ],
+          "cells": [
+            {
+              "id": "f1_c4",
+              "row": 0,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f2_c1",
+              "row": 1,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f2_c7",
+              "row": 1,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f4_c4",
+              "row": 3,
+              "column": 3,
+              "initial": true
+            },
+            {
+              "id": "f7_c4",
+              "row": 6,
+              "column": 3,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_1",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f3_c1",
+              "row": 2,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f3_c2",
+              "row": 2,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f3_c3",
+              "row": 2,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f4_c1",
+              "row": 3,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f4_c2",
+              "row": 3,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f4_c3",
+              "row": 3,
+              "column": 2,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_2",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f3_c5",
+              "row": 2,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f3_c6",
+              "row": 2,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f3_c7",
+              "row": 2,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f4_c5",
+              "row": 3,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f4_c6",
+              "row": 3,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f4_c7",
+              "row": 3,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "verde",
+          "rule": "GREEN",
+          "prizes": [
+            6,
+            5,
+            4
+          ],
+          "cells": [
+            {
+              "id": "f5_c1",
+              "row": 4,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f5_c7",
+              "row": 4,
+              "column": 6,
+              "initial": true
+            },
+            {
+              "id": "f6_c1",
+              "row": 5,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f6_c2",
+              "row": 5,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f6_c3",
+              "row": 5,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f6_c4",
+              "row": 5,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f6_c5",
+              "row": 5,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f6_c6",
+              "row": 5,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f6_c7",
+              "row": 5,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "azul",
+          "rule": "BLUE",
+          "prizes": [
+            7,
+            5,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f5_c2",
+              "row": 4,
+              "column": 1,
+              "initial": true
+            },
+            {
+              "id": "f5_c3",
+              "row": 4,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f5_c4",
+              "row": 4,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f5_c5",
+              "row": 4,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f5_c6",
+              "row": 4,
+              "column": 5,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "morado_2",
+          "rule": "PURPLE",
+          "prizes": [
+            7,
+            5,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f7_c1",
+              "row": 6,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f7_c2",
+              "row": 6,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f7_c3",
+              "row": 6,
+              "column": 2,
+              "initial": true
+            },
+            {
+              "id": "f7_c5",
+              "row": 6,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f7_c6",
+              "row": 6,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f7_c7",
+              "row": 6,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tablero_04",
+      "zones": [
+        {
+          "id": "naranja_1",
+          "rule": "ORANGE_HIGH",
+          "prizes": [
+            6,
+            4,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f1_c1",
+              "row": 0,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f1_c2",
+              "row": 0,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f1_c3",
+              "row": 0,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f1_c4",
+              "row": 0,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f1_c5",
+              "row": 0,
+              "column": 4,
+              "initial": true
+            },
+            {
+              "id": "f1_c6",
+              "row": 0,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f1_c7",
+              "row": 0,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "amarillo",
+          "rule": "YELLOW",
+          "prizes": [
+            8,
+            6,
+            4
+          ],
+          "cells": [
+            {
+              "id": "f2_c1",
+              "row": 1,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f2_c7",
+              "row": 1,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f4_c1",
+              "row": 3,
+              "column": 0,
+              "initial": true
+            },
+            {
+              "id": "f4_c7",
+              "row": 3,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f6_c1",
+              "row": 5,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f6_c7",
+              "row": 5,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_1",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f2_c2",
+              "row": 1,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f3_c1",
+              "row": 2,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f3_c2",
+              "row": 2,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f5_c1",
+              "row": 4,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f5_c2",
+              "row": 4,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f6_c2",
+              "row": 5,
+              "column": 1,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "azul",
+          "rule": "BLUE",
+          "prizes": [
+            8,
+            6,
+            4
+          ],
+          "cells": [
+            {
+              "id": "f2_c3",
+              "row": 1,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f2_c5",
+              "row": 1,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f4_c3",
+              "row": 3,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f4_c5",
+              "row": 3,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f6_c3",
+              "row": 5,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f6_c5",
+              "row": 5,
+              "column": 4,
+              "initial": true
+            }
+          ]
+        },
+        {
+          "id": "verde",
+          "rule": "GREEN",
+          "prizes": [
+            3,
+            2,
+            1
+          ],
+          "cells": [
+            {
+              "id": "f2_c4",
+              "row": 1,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f4_c2",
+              "row": 3,
+              "column": 1,
+              "initial": false
+            },
+            {
+              "id": "f4_c6",
+              "row": 3,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f6_c4",
+              "row": 5,
+              "column": 3,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "rojo_2",
+          "rule": "RED",
+          "prizes": [
+            6,
+            4,
+            2
+          ],
+          "cells": [
+            {
+              "id": "f2_c6",
+              "row": 1,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f3_c6",
+              "row": 2,
+              "column": 5,
+              "initial": true
+            },
+            {
+              "id": "f3_c7",
+              "row": 2,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f5_c6",
+              "row": 4,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f5_c7",
+              "row": 4,
+              "column": 6,
+              "initial": false
+            },
+            {
+              "id": "f6_c6",
+              "row": 5,
+              "column": 5,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "morado",
+          "rule": "PURPLE",
+          "prizes": [
+            7,
+            5,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f3_c3",
+              "row": 2,
+              "column": 2,
+              "initial": true
+            },
+            {
+              "id": "f3_c4",
+              "row": 2,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f3_c5",
+              "row": 2,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f4_c4",
+              "row": 3,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f5_c3",
+              "row": 4,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f5_c4",
+              "row": 4,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f5_c5",
+              "row": 4,
+              "column": 4,
+              "initial": false
+            }
+          ]
+        },
+        {
+          "id": "naranja_2",
+          "rule": "ORANGE_LOW",
+          "prizes": [
+            6,
+            4,
+            3
+          ],
+          "cells": [
+            {
+              "id": "f7_c1",
+              "row": 6,
+              "column": 0,
+              "initial": false
+            },
+            {
+              "id": "f7_c2",
+              "row": 6,
+              "column": 1,
+              "initial": true
+            },
+            {
+              "id": "f7_c3",
+              "row": 6,
+              "column": 2,
+              "initial": false
+            },
+            {
+              "id": "f7_c4",
+              "row": 6,
+              "column": 3,
+              "initial": false
+            },
+            {
+              "id": "f7_c5",
+              "row": 6,
+              "column": 4,
+              "initial": false
+            },
+            {
+              "id": "f7_c6",
+              "row": 6,
+              "column": 5,
+              "initial": false
+            },
+            {
+              "id": "f7_c7",
+              "row": 6,
+              "column": 6,
+              "initial": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -94,6 +94,27 @@ class ApiIntegrationTest {
             assertEquals(4,users.size());
         }
     }
+    @Test void activeSessionRotatesBeyondTenMinutesWithoutChangingSessionIdentity() throws Exception {
+        String username = name();
+        Reply current = register(username);
+        String userId = current.body.at("/user/id").asText();
+        String sessionId = db.queryForObject("SELECT id FROM sessions WHERE user_id=? AND revoked_at IS NULL", String.class, userId);
+        for (int second = 10; second <= 1260; second += 10) {
+            clock.now = clock.now.plusSeconds(10);
+            assertEquals(200, request("GET", "/users/me", null, access(current)).status);
+            if (second % 540 == 0) {
+                Reply rotated = request("POST", "/auth/refresh", Map.of("refreshToken", refresh(current)), null);
+                assertEquals(200, rotated.status);
+                assertNotEquals(refresh(current), refresh(rotated));
+                assertEquals(userId, rotated.body.at("/user/id").asText());
+                current = rotated;
+                error(request("POST", "/auth/login", Map.of("username", username, "password", PASSWORD), null), 409, "SESSION_ALREADY_ACTIVE");
+            }
+        }
+        assertEquals(sessionId, db.queryForObject("SELECT id FROM sessions WHERE user_id=? AND revoked_at IS NULL", String.class, userId));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at IS NULL", Integer.class, userId));
+        assertEquals(204, request("DELETE", "/users/me", Map.of("currentPassword", PASSWORD), access(current)).status);
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");
