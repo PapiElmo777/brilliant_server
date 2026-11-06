@@ -59,11 +59,18 @@
           "maximum": 6
         },
         "levelId": {
-          "enum": [
-            "tablero_01",
-            "tablero_02",
-            "tablero_03",
-            "tablero_04"
+          "oneOf": [
+            {
+              "enum": [
+                "tablero_01",
+                "tablero_02",
+                "tablero_03",
+                "tablero_04"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -267,7 +274,7 @@
           "minimum": 0
         },
         "data": {
-          "type": "object"
+          "$ref": "#/$defs/snapshot"
         }
       },
       "required": [
@@ -326,6 +333,220 @@
         "type",
         "serverTime",
         "data"
+      ],
+      "additionalProperties": false
+    },
+    "member": {
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "username": {
+          "type": "string"
+        },
+        "joinOrder": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "memberId",
+        "userId",
+        "username",
+        "joinOrder",
+        "ready",
+        "connected"
+      ],
+      "additionalProperties": false
+    },
+    "room": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "hostMemberId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        },
+        "levelId": {
+          "oneOf": [
+            {
+              "enum": [
+                "tablero_01",
+                "tablero_02",
+                "tablero_03",
+                "tablero_04"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "$ref": "#/$defs/roomState"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "hostMemberId",
+        "capacity",
+        "levelId",
+        "revision",
+        "state",
+        "members"
+      ],
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "rulesVersion": {
+          "const": 1
+        },
+        "roomId": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "room": {
+          "$ref": "#/$defs/room"
+        },
+        "match": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "messages": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "rulesVersion",
+        "roomId",
+        "sequence",
+        "serverTime",
+        "room",
+        "match",
+        "messages"
+      ],
+      "additionalProperties": false
+    },
+    "listResponse": {
+      "type": "object",
+      "properties": {
+        "rooms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "hostName": {
+                "type": "string"
+              },
+              "capacity": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 6
+              },
+              "occupancy": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "levelId": {
+                "oneOf": [
+                  {
+                    "enum": [
+                      "tablero_01",
+                      "tablero_02",
+                      "tablero_03",
+                      "tablero_04"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "const": "LOBBY"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "hostName",
+              "capacity",
+              "occupancy",
+              "levelId",
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "currentRoomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rooms",
+        "currentRoomId"
       ],
       "additionalProperties": false
     }

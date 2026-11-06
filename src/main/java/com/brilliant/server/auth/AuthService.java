@@ -27,10 +27,11 @@ public class AuthService {
     private final JwtEncoder encoder;
     private final RateLimits limits;
     private final TestAccountsFile testAccounts;
+    private final com.brilliant.server.rooms.RoomService rooms;
     private final SecureRandom random=new SecureRandom();
-    public AuthService(JdbcTemplate db,TransactionTemplate tx,Accounts accounts,Credentials credentials,Settings.Values settings,Clock clock,JwtEncoder encoder,RateLimits limits,TestAccountsFile testAccounts) {
+    public AuthService(JdbcTemplate db,TransactionTemplate tx,Accounts accounts,Credentials credentials,Settings.Values settings,Clock clock,JwtEncoder encoder,RateLimits limits,TestAccountsFile testAccounts,com.brilliant.server.rooms.RoomService rooms) {
         this.db=db;this.tx=tx;this.accounts=accounts;this.credentials=credentials;this.settings=settings;this.clock=clock;this.encoder=encoder;this.limits=limits;
-        this.testAccounts=testAccounts;
+        this.testAccounts=testAccounts; this.rooms=rooms;
     }
     public AuthSession register(String name,String password,String ip) {
         limits.hit("register:"+ip,settings.registerIpLimit(),Duration.ofHours(1));
@@ -110,6 +111,7 @@ public class AuthService {
     public void logout(String user,String sid) {
         Database.write(tx,() -> {
             if(!accounts.active(user,sid,true)) throw new ApiException(401,"SESSION_INVALID");
+            rooms.leaveAccount(user);
             revoke(sid); return null;
         });
     }
@@ -146,6 +148,7 @@ public class AuthService {
         Database.write(tx,() -> {
             Stored current=accounts.requireActive(user,sid);
             if(!current.passwordHash().equals(verified.passwordHash())) throw new ApiException(401,"SESSION_INVALID");
+            rooms.leaveAccount(user);
             Instant now=clock.instant();
             db.update("INSERT INTO deletion_ledger VALUES (?,?,?)",user,now.toString(),now.plus(Duration.ofDays(30)).toString());
             if(db.update("DELETE FROM users WHERE id=?",user)!=1) throw new ApiException(401,"SESSION_INVALID");

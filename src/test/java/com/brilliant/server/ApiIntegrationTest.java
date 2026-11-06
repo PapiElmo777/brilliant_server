@@ -115,6 +115,151 @@ class ApiIntegrationTest {
         assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at IS NULL", Integer.class, userId));
         assertEquals(204, request("DELETE", "/users/me", Map.of("currentPassword", PASSWORD), access(current)).status);
     }
+    Reply roomCommand(String method, String route, Reply account, Map<String,Object> fields) throws Exception {
+        var body = new LinkedHashMap<String,Object>(fields);
+        body.put("commandId",UUID.randomUUID().toString());
+        return request(method,route,body,access(account));
+    }
+    String roomId(Reply result) { assertEquals(200,result.status); return result.body.path("roomId").asText(); }
+    long revision(Reply snapshot) { return snapshot.body.at("/room/revision").asLong(); }
+    @Test void sixClientsShareLobbyAndSeventhCannotEnterOrConfigure() throws Exception {
+        var clients = new ArrayList<Reply>();
+        for (int i=0;i<7;i++) clients.add(register());
+        String id = roomId(roomCommand("POST","/rooms",clients.getFirst(),Map.of("name","Escuadrón","capacity",6)));
+        for (int i=1;i<6;i++) assertEquals(200,roomCommand("POST","/rooms/"+id+"/join",clients.get(i),Map.of()).status);
+        error(roomCommand("POST","/rooms/"+id+"/join",clients.get(6),Map.of()),409,"ROOM_FULL");
+        error(request("GET","/rooms/"+id,null,access(clients.get(6))),403,"NOT_ROOM_MEMBER");
+        error(roomCommand("PATCH","/rooms/"+id+"/settings",clients.get(1),Map.of("expectedRevision",0,"capacity",6,"levelId","tablero_02")),403,"HOST_ONLY");
+        var selected = roomCommand("PATCH","/rooms/"+id+"/settings",clients.getFirst(),Map.of("expectedRevision",0,"capacity",6,"levelId","tablero_02"));
+        assertEquals(200,selected.status);
+        for (var client : clients.subList(0,6)) {
+            var snapshot = request("GET","/rooms/"+id,null,access(client));
+            assertEquals(200,snapshot.status);
+            assertEquals(selected.body.path("data"),snapshot.body); // Fixed test clock: same committed state.
+            assertEquals(6,snapshot.body.at("/room/members").size());
+        }
+        for (int i=1;i<6;i++) assertEquals(200,roomCommand("PUT","/rooms/"+id+"/ready",clients.get(i),Map.of("expectedRevision",1,"ready",true)).status);
+        var started = roomCommand("POST","/rooms/"+id+"/start",clients.getFirst(),Map.of("expectedRevision",1));
+        assertEquals(200,started.status); assertEquals(20,started.body.at("/data/match/target").asInt());
+        assertEquals(6,started.body.at("/data/match/participants").size());
+        error(roomCommand("POST","/rooms/"+id+"/join",clients.get(6),Map.of()),409,"ROOM_ALREADY_STARTED");
+    }
+    @Test void commandsAreIdempotentAndMembershipIsUniqueAcrossRooms() throws Exception {
+        Reply owner = register(); String cid = UUID.randomUUID().toString();
+        var body = Map.of("commandId",cid,"name","Servidor de prueba","capacity",6);
+        Reply created = request("POST","/rooms",body,access(owner));
+        String id = roomId(created);
+        assertEquals(created.body,request("POST","/rooms",body,access(owner)).body);
+        error(request("POST","/rooms",Map.of("commandId",cid,"name","Otro","capacity",6),access(owner)),409,"COMMAND_CONFLICT");
+        error(roomCommand("POST","/rooms",owner,Map.of("name","Otra sala","capacity",2)),409,"ALREADY_IN_ROOM");
+        Reply other = register(); String second = roomId(roomCommand("POST","/rooms",other,Map.of("name","Segunda","capacity",2)));
+        error(roomCommand("POST","/rooms/"+second+"/join",owner,Map.of()),409,"ALREADY_IN_ROOM");
+        assertEquals(id,request("GET","/rooms",null,access(owner)).body.path("currentRoomId").asText());
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE user_id=? AND left_at IS NULL",Integer.class,owner.body.at("/user/id").asText()));
+        Reply rotated = request("POST","/auth/refresh",Map.of("refreshToken",refresh(owner)),null);
+        assertEquals(200,request("GET","/rooms/"+id,null,access(rotated)).status);
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE room_id=?",Integer.class,id));
+    }
+    @Test void lastSlotRaceNeverExceedsCapacity() throws Exception {
+        Reply host=register(),a=register(),b=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Último lugar","capacity",2)));
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var results=pool.invokeAll(List.<Callable<Reply>>of(
+                ()->roomCommand("POST","/rooms/"+id+"/join",a,Map.of()),
+                ()->roomCommand("POST","/rooms/"+id+"/join",b,Map.of())));
+            assertEquals(List.of(200,409),results.stream().map(f->{try{return f.get().status;}catch(Exception e){throw new RuntimeException(e);}}).sorted().toList());
+        }
+        assertEquals(2,request("GET","/rooms/"+id,null,access(host)).body.at("/room/members").size());
+    }
+    @Test void readySurvivesConfigurationChangesAndRandomRetryDoesNotReroll() throws Exception {
+        Reply host=register(),guest=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Listos","capacity",6)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());
+        error(roomCommand("POST","/rooms/"+id+"/start",host,Map.of("expectedRevision",0)),409,"LEVEL_REQUIRED");
+        roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",0,"ready",true));
+        var cid=UUID.randomUUID().toString();var randomBody=Map.of("commandId",cid,"expectedRevision",0);
+        Reply random=request("POST","/rooms/"+id+"/random-level",randomBody,access(host));
+        assertEquals(random.body,request("POST","/rooms/"+id+"/random-level",randomBody,access(host)).body);
+        assertTrue(random.body.at("/data/room/members/1/ready").asBoolean());
+        var changed=roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",1,"capacity",2,"levelId","tablero_04"));
+        assertTrue(changed.body.at("/data/room/members/1/ready").asBoolean());
+        error(roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",1,"ready",false)),409,"STALE_SETTINGS");
+        assertEquals(200,roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",2,"ready",false)).status);
+        error(roomCommand("POST","/rooms/"+id+"/start",host,Map.of("expectedRevision",2)),409,"PLAYERS_NOT_READY");
+        roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",2,"ready",true));
+        var started=roomCommand("POST","/rooms/"+id+"/start",host,Map.of("expectedRevision",2));
+        assertEquals(26,started.body.at("/data/match/target").asInt());
+        assertEquals("tablero_04",started.body.at("/data/match/levelId").asText());
+        error(roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",2,"capacity",6,"levelId","tablero_01")),409,"ROOM_ALREADY_STARTED");
+    }
+    @Test void capacitySixStartsWithTwoAndCommandRetryKeepsSameMatchAndTarget() throws Exception {
+        Reply host=register(),guest=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Dos de seis","capacity",6)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());
+        var changed=roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",0,"capacity",5,"levelId",json.nullNode()));
+        assertEquals(200,changed.status);assertTrue(changed.body.at("/data/room/levelId").isNull());
+        roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",1,"capacity",6,"levelId","tablero_03"));
+        roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",2,"ready",true));
+        var body=Map.of("commandId",UUID.randomUUID().toString(),"expectedRevision",2);
+        var started=request("POST","/rooms/"+id+"/start",body,access(host));
+        assertEquals(200,started.status);assertEquals(26,started.body.at("/data/match/target").asInt());
+        assertEquals(2,started.body.at("/data/match/participants").size());
+        assertEquals(started.body,request("POST","/rooms/"+id+"/start",body,access(host)).body);
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_matches WHERE room_id=?",Integer.class,id));
+        roomCommand("POST","/rooms/"+id+"/leave",guest,Map.of());
+        assertEquals(26,request("GET","/rooms/"+id,null,access(host)).body.at("/match/target").asInt());
+    }
+    @Test void startJoinRaceHasOneFrozenValidRoster() throws Exception {
+        Reply host=register(),guest=register(),newcomer=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Carrera","capacity",6)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());
+        roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",0,"capacity",6,"levelId","tablero_01"));
+        roomCommand("PUT","/rooms/"+id+"/ready",guest,Map.of("expectedRevision",1,"ready",true));
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var start=pool.submit(()->roomCommand("POST","/rooms/"+id+"/start",host,Map.of("expectedRevision",1)));
+            var join=pool.submit(()->roomCommand("POST","/rooms/"+id+"/join",newcomer,Map.of()));
+            var s=start.get();var j=join.get();
+            if(s.status==200) {
+                assertEquals(409,j.status);assertEquals(2,s.body.at("/data/match/participants").size());
+                assertEquals(26,s.body.at("/data/match/target").asInt());
+            } else { error(s,409,"PLAYERS_NOT_READY");assertEquals(200,j.status); }
+        }
+    }
+    @Test void leavingLogoutAndDeletionTransferHostAndPreserveHistory() throws Exception {
+        Reply host=register(),guest=register(),third=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Continuidad","capacity",3)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());roomCommand("POST","/rooms/"+id+"/join",third,Map.of());
+        error(roomCommand("PATCH","/rooms/"+id+"/settings",host,Map.of("expectedRevision",0,"capacity",2,"levelId","tablero_01")),409,"CAPACITY_BELOW_OCCUPANCY");
+        assertEquals(204,request("POST","/auth/logout",null,access(host)).status);
+        var snapshot=request("GET","/rooms/"+id,null,access(guest));
+        assertEquals(snapshot.body.at("/room/members/0/memberId"),snapshot.body.at("/room/hostMemberId"));
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(guest)).status);
+        snapshot=request("GET","/rooms/"+id,null,access(third));
+        assertEquals(1,snapshot.body.at("/room/members").size());
+        assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE room_id=?",Integer.class,id));
+        assertEquals(200,roomCommand("POST","/rooms/"+id+"/leave",third,Map.of()).status);
+        assertEquals("CLOSED",db.queryForObject("SELECT state FROM rooms WHERE id=?",String.class,id));
+        assertTrue(db.queryForObject("SELECT COUNT(*) FROM room_events WHERE room_id=?",Integer.class,id)>=6);
+    }
+    @Test void roomPresenceExpiresIndependentlyFromAccountHeartbeat() throws Exception {
+        Reply host=register(),guest=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Presencia","capacity",2)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());
+        clock.now=clock.now.plusSeconds(30);
+        request("GET","/users/me",null,access(host));request("GET","/users/me",null,access(guest));
+        assertEquals(200,request("GET","/rooms/"+id,null,access(guest)).status);
+        clock.now=clock.now.plusSeconds(15);
+        var snapshot=request("GET","/rooms/"+id,null,access(guest));
+        assertEquals(1,snapshot.body.at("/room/members").size());
+        error(request("GET","/rooms/"+id,null,access(host)),403,"NOT_ROOM_MEMBER");
+    }
+    @Test void malformedRoomCommandsCannotImpersonateMembers() throws Exception {
+        Reply host=register();
+        error(request("POST","/rooms",Map.of("commandId",UUID.randomUUID().toString(),"name","Sala","capacity",2,"userId","otro"),access(host)),400,"VALIDATION_ERROR");
+        error(request("POST","/rooms",Map.of("commandId",UUID.randomUUID().toString(),"name","Sala","capacity",2.5),access(host)),400,"VALIDATION_ERROR");
+        error(request("POST","/rooms",Map.of("commandId","invalido","name","Sala","capacity",2),access(host)),400,"VALIDATION_ERROR");
+        error(request("GET","/rooms",null,null),401,"UNAUTHORIZED");
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

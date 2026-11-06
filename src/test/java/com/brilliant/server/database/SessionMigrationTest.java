@@ -33,7 +33,7 @@ class SessionMigrationTest {
         for(int run=0;run<2;run++) {
             try(var source=new Database().dataSource(settings,new MockEnvironment())) {
                 var db=new JdbcTemplate(source);
-                assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
+                assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
                 assertEquals("first",db.queryForObject("SELECT id FROM sessions WHERE revoked_at IS NULL",String.class));
                 assertEquals("2026-01-01T00:00:00Z",db.queryForObject("SELECT last_seen_at FROM sessions WHERE id='first'",String.class));
                 var failure=assertThrows(org.springframework.dao.DataAccessException.class,()->db.update("INSERT INTO sessions(id,user_id,created_at,expires_at,last_seen_at) VALUES('third','u','now','later','now')"));

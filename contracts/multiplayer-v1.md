@@ -1,14 +1,14 @@
 # Multijugador — contrato v1
 
-Primera base de implementación del plan del 5 de noviembre de 2026. Los endpoints de salas y partidas descritos aquí se implementarán en las siguientes entregas; todavía no están expuestos. Cuentas conserva sus rutas existentes.
+Implementación de las entregas 1 y 2 del plan del 5 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. Las rutas de juego, chat, votación, revancha y WebSocket siguen pendientes. Cuentas conserva sus rutas existentes.
 
-Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Son el contrato de las siguientes entregas; no sustituyen autorización ni validación de dominio. El contenido de las instantáneas se define aquí y se concretará en DTO al implementar su transporte.
+Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos reservan la siguiente. No sustituyen autorización ni validación de dominio. Los campos internos de match se ampliarán con las rondas y resultados.
 
 ## Transporte y autoridad
 
 HTTP `/api/v1`, Bearer en cabecera y WebSocket `/api/v1/rooms/{roomId}/events` en el mismo origen. TLS fuera de Debug. No enviar tokens en URL. La identidad procede de la sesión autenticada; ningún comando acepta identidad, puntos, premios, anfitrión o dados enviados por el cliente como autoridad.
 
-Toda mutación de multijugador lleva `commandId` UUID en el cuerpo. El servidor guarda `(userId, commandId, operación, recurso, contenido canónico, respuesta)` en la misma transacción del efecto. Repetirlo devuelve la respuesta original; cambiar operación/recurso/contenido produce 409 COMMAND_CONFLICT. La unicidad de miembro usa cuenta, no token, por lo que refresh no añade participantes. Solo una pertenencia activa por cuenta. Esto requiere persistencia transaccional en la entrega de salas; el documento no acredita que ya esté implementada.
+Toda mutación de multijugador lleva `commandId` UUID en el cuerpo. El servidor guarda `(userId, commandId, operación, recurso, contenido canónico, respuesta)` en la misma transacción del efecto. Repetirlo devuelve la respuesta original; cambiar operación/recurso/contenido produce 409 COMMAND_CONFLICT. La unicidad de miembro usa cuenta, no token, por lo que refresh no añade participantes. Solo una pertenencia activa por cuenta. Implementado en SQLite V003 con índice único y transacciones BEGIN IMMEDIATE. Los recibos se guardan para comandos aceptados; una petición rechazada no produce efectos ni un recibo de éxito.
 
 ## Estados
 
@@ -26,12 +26,12 @@ Todas las respuestas de comando: `{commandId, roomId, sequence, data}`. `data` e
 
 | Método / ruta | Campos adicionales del cuerpo | Entrega |
 |---|---|---|
-| GET /rooms | —; `{rooms:[{id,name,hostName,capacity,occupancy,levelId,state}]}` | 2 |
+| GET /rooms | —; `{rooms:[{id,name,hostName,capacity,occupancy,levelId,state}],currentRoomId}` | 2 |
 | POST /rooms | name (1–80 caracteres tras trim), capacity (2–6) | 2 |
 | POST /rooms/{id}/join | — | 2 |
 | POST /rooms/{id}/leave | — | 2 |
 | GET /rooms/{id} | — | 2 |
-| PATCH /rooms/{id}/settings | expectedRevision, capacity, levelId (tablero_01…04) | 2 |
+| PATCH /rooms/{id}/settings | expectedRevision, capacity, levelId (tablero_01…04 o null si todavía no se eligió mapa) | 2 |
 | POST /rooms/{id}/random-level | expectedRevision | 2 |
 | PUT /rooms/{id}/ready | ready (boolean), expectedRevision | 2 |
 | POST /rooms/{id}/start | expectedRevision | 2 |
@@ -42,7 +42,7 @@ Todas las respuestas de comando: `{commandId, roomId, sequence, data}`. `data` e
 | PUT /matches/{id}/end-vote/ballot | voteId, approve (boolean) | 5 |
 | POST /matches/{id}/rematch | — | 6 |
 
-Configuración lleva revisión para detectar cambios antiguos; la revisión global de eventos no invalida jugadas de rivales. PATCH reemplaza capacidad y nivel juntos; nivel aleatorio es una decisión del servidor y su reintento no vuelve a sortear. El anfitrión inicia desde dos presentes, mapa elegido y todos los invitados listos; su botón expresa su disponibilidad. Las políticas propuestas de restablecimiento de Listo se revisan al implementar el lobby.
+Configuración lleva revisión para detectar cambios antiguos; la revisión global de eventos no invalida jugadas de rivales. PATCH reemplaza capacidad y nivel juntos; nivel aleatorio es una decisión del servidor y su reintento no vuelve a sortear. El anfitrión inicia desde dos presentes, mapa elegido y todos los invitados listos; su botón expresa su disponibilidad. Regla confirmada por el usuario: conservar Listo cuando cambie mapa o capacidad. El invitado puede quitar Listo. Se rechaza una capacidad menor que la ocupación actual.
 
 ## Instantáneas y eventos
 
@@ -60,7 +60,7 @@ Formato existente `{error:{code,...}}`; el cliente decide por code, nunca por te
 - 401 UNAUTHORIZED, ACCESS_TOKEN_EXPIRED, SESSION_INVALID.
 - 403 NOT_ROOM_MEMBER, HOST_ONLY.
 - 404 ROOM_NOT_FOUND, MATCH_NOT_FOUND.
-- 409 ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE.
+- 409 CAPACITY_BELOW_OCCUPANCY, LEVEL_REQUIRED, HOST_STARTS_MATCH, ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE.
 - 429 RATE_LIMITED con Retry-After.
 
 ## Renovación implementada
@@ -73,3 +73,14 @@ Cliente: `flutter test`, `flutter analyze`, `flutter test tool/export_multiplaye
 Servidor: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./mvnw test`.
 
 Regenerar intencionalmente con `flutter test tool/export_multiplayer_catalog_test.dart --dart-define=UPDATE_MULTIPLAYER_CATALOG=true` y `flutter test test/multiplayer/rules_parity_test.dart --dart-define=UPDATE_MULTIPLAYER_CATALOG=true`. Copiar catálogo a `src/main/resources/multiplayer/` y corpus a `src/test/resources/multiplayer/` del servidor. Comparar copias byte a byte antes del commit. No modificar fixtures para encubrir diferencias del motor.
+
+
+## Alcance verificado de lobby
+
+Todas las rutas de sala responden 200 en éxito. GET /rooms enumera los lobbies, también los llenos, y devuelve currentRoomId para recuperar una pertenencia existente sin volver a unirse. GET /rooms/{id} solo es accesible para miembros activos de esa sala. Flutter consulta listado o instantánea cada tres segundos mientras esta pantalla está en primer plano; pausa al pasar a segundo plano. El canal WebSocket y el chat no están implementados todavía.
+
+La presencia de sala caduca tras 45 segundos sin consultar su instantánea, por separado del heartbeat de cuenta. La renovación conserva el sid y el miembro. Logout/borrado retiran al miembro en la misma transacción de cuenta. La salida cambia anfitrión al conectado de mayor antigüedad y cierra una sala vacía. Los nombres e identidades de participación se conservan para el historial aunque se borre la cuenta. Estas comprobaciones cubren lobby/entrada a preparación; las reglas de victoria por abandono durante la partida corresponden a la entrega 5.
+
+POST /start crea una partida PREPARING, congela nivel, participantes y meta; no crea dados ni inicia el modo local. La interfaz muestra este estado sin permitir cambios de configuración. La preparación individual y las rondas se integran en entrega 4. En la entrega actual no se implementa una política de recuperación o cancelación de partidas en juego tras reiniciar Java.
+
+Recorrido real: `flutter test test/multiplayer/rooms_api_e2e_test.dart --dart-define=RUN_ROOMS_API_E2E=true`. Requiere JAR compilado y Java 21; ambos se pueden seleccionar con ROOMS_SERVER_JAR y ROOMS_SERVER_JAVA. El recorrido usa siete repositorios Dart independientes, un puerto libre y SQLite/cuentas temporales, y termina su proceso Java. Verifica lobby de seis, séptimo rechazado, aislamiento de otra sala, permisos, mismo identificador de preparación y transferencia de anfitrión; no acredita dados compartidos ni seis teléfonos físicos.

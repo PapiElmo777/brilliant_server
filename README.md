@@ -1,6 +1,6 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. Las salas y partidas en línea siguen pendientes.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; las rondas en línea y el chat siguen pendientes.
 
 ## Arranque en la red local
 
@@ -78,3 +78,16 @@ Flutter conserva access y refresh únicamente en memoria y renueva el acceso ant
 Paridad comprobada mediante **80 estados y 2880 combinaciones de dados** compartidos por Dart y Java, con copias idénticas del catálogo y corpus. Verificación final: **362 pruebas Flutter aprobadas** (recorrido JAR optativo omitido) y análisis sin avisos. La suite Java tiene **33 pruebas aprobadas**, incluida actividad durante 21 minutos con reloj controlado, dos rotaciones y la misma sesión. La verificación de sesión exclusiva no acredita pertenencia única a salas: esta comprobación sigue pendiente al integrar su persistencia.
 
 La entrega 1 permanece en curso. Aún faltan salas/lobby, canal/chat, rondas sincronizadas, premios transaccionales, continuidad, final y revancha. No se ha hecho merge a `main`, modificado las cuentas existentes ni reiniciado el servidor LAN. Los empates absolutos y las demás decisiones pendientes del plan continúan sin resolverse.
+
+
+## Menú y lobby multijugador: 5 de noviembre de 2026
+
+Implementada la entrega 2 en **`multiplayer`**: menú Un jugador/Multijugador, listado, Alojar partida con nombre/capacidad, cuatro mapas y selección aleatoria, participantes, Listo e Iniciar. Solo el anfitrión cambia configuración. Por indicación del usuario, **Listo se conserva al cambiar mapa o capacidad**; el invitado puede quitarlo y no se admite una capacidad menor que los presentes.
+
+SQLite V003 conserva V001/V002 y agrega pertenencia única por cuenta, recibos idempotentes y eventos. Entradas simultáneas no sobrepasan el cupo; inicio/entrada congelan una lista válida. El cliente recupera la sala existente, consulta cada tres segundos en primer plano y confirma la salida con Java. Reintentos de resultados inciertos conservan el mismo comando. Logout/borrado liberan lugar y transfieren anfitrión sin eliminar el historial de los demás. Las reglas de abandono durante las rondas siguen en entrega 5.
+
+**Alcance del inicio:** fija mapa, participantes, meta e ID de partida en PREPARING. La preparación individual y las rondas compartidas todavía no están integradas; no se abre una partida local en su lugar. WebSocket y chat corresponden a la siguiente entrega. Las cuentas reales y el servidor LAN no se han modificado ni reiniciado.
+
+Verificación: **376 pruebas Flutter aprobadas**, dos recorridos JAR optativos omitidos en la suite normal, análisis sin avisos, **43 pruebas Java aprobadas**, reapertura V003 e identidades históricas. Se ejecutó aparte el [recorrido real de salas](contracts/multiplayer-v1.md): siete clientes Dart independientes contra el JAR, seis en una sala, séptimo rechazado y otra sala aislada, preparación común y transferencia de anfitrión. No es una prueba de seis teléfonos ni de dados compartidos. Capturas de menú/lobby revisadas; pruebas de 320×568, 390×844, horizontal y texto 2× sin desbordamientos.
+
+El JAR estándar actualizado y el APK Android Debug están generados. Antes de arrancarlo sobre una base existente, respaldar SQLite con el proceso detenido: V003 se aplicará al arrancar y no se debe volver a un JAR que solo conozca V001/V002. Las pruebas usaron carpetas y cuentas temporales. El merge a `main` se mantiene reservado para completar y verificar todo el multijugador.

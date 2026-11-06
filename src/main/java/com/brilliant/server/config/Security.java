@@ -59,7 +59,7 @@ public class Security {
         CorsConfiguration config=new CorsConfiguration();
         config.setAllowedOrigins(settings.allowedOrigins()==null || settings.allowedOrigins().isBlank()? List.of():Arrays.stream(settings.allowedOrigins().split(",")).map(String::strip).toList());
         if(config.getAllowedOrigins().contains("*")) throw new IllegalArgumentException("CORS exige orígenes explícitos");
-        config.setAllowedMethods(List.of("GET","POST","PATCH","DELETE","OPTIONS"));
+        config.setAllowedMethods(List.of("GET","POST","PATCH","PUT","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization","Content-Type"));
         config.setExposedHeaders(List.of("X-Request-Id","Retry-After"));
         config.setAllowCredentials(false);
