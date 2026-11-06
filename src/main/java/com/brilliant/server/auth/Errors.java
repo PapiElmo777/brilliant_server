@@ -37,7 +37,7 @@ public class Errors {
         if(e.retryAfter>0) builder.header("Retry-After", Long.toString(e.retryAfter));
         return builder.body(body(e,req));
     }
-    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ExceptionHandler({HttpMessageNotReadableException.class,org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
     ResponseEntity<?> malformed(Exception e, HttpServletRequest req) { return api(new ApiException(400,"VALIDATION_ERROR"),req); }
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<?> database(Exception e, HttpServletRequest req) { return api(new ApiException(503,"SERVICE_UNAVAILABLE"),req); }

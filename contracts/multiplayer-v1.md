@@ -1,8 +1,8 @@
 # Multijugador — contrato v1
 
-Implementación de las entregas 1 y 2 del plan del 5 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. Las rutas de juego, chat, votación, revancha y WebSocket siguen pendientes. Cuentas conserva sus rutas existentes.
+Implementación de las entregas 1–3 del plan, actualizada el 6 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. WebSocket, envío de chat e historial están disponibles. Las rutas de juego, votación y revancha siguen pendientes. Cuentas conserva sus rutas existentes.
 
-Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos reservan la siguiente. No sustituyen autorización ni validación de dominio. Los campos internos de match se ampliarán con las rondas y resultados.
+Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos y el historial describen el canal actual. No sustituyen autorización ni validación de dominio. Los campos internos de match se ampliarán con las rondas y resultados.
 
 ## Transporte y autoridad
 
@@ -35,6 +35,8 @@ Todas las respuestas de comando: `{commandId, roomId, sequence, data}`. `data` e
 | POST /rooms/{id}/random-level | expectedRevision | 2 |
 | PUT /rooms/{id}/ready | ready (boolean), expectedRevision | 2 |
 | POST /rooms/{id}/start | expectedRevision | 2 |
+| GET /rooms/{id}/messages | before opcional (secuencia exclusiva); página de hasta 20, nextBefore nullable | 3 |
+| WebSocket /rooms/{id}/events | Bearer en cabecera; sin parámetros de consulta | 3 |
 | POST /rooms/{id}/messages | text (1–300 caracteres de texto plano) | 3 |
 | PUT /matches/{id}/preparation | placements (objeto celda→entero) | 4 |
 | POST /matches/{id}/rounds/{roundId}/actions | kind (PLACE/SKIP); PLACE exige dieIndex (0/1), cellId; SKIP los omite | 4 |
@@ -48,9 +50,9 @@ Configuración lleva revisión para detectar cambios antiguos; la revisión glob
 
 Instantánea: `{protocolVersion:1, rulesVersion:1, roomId, sequence, serverTime, room, match, messages}`. `room`: id, name, hostMemberId, capacity, levelId nullable, revision, state, members (memberId, userId, username, joinOrder, ready, connected). `match` es null en lobby; después contiene id, state, levelId, target, participants, ownBoard, round y result. Solo se envía el tablero del solicitante. `round`: id, dice de dos enteros, deadline (UTC ISO-8601), resolvedMemberIds. El resultado final será inmutable.
 
-Evento: `{protocolVersion:1, roomId, sequence, type, serverTime, data}`. Secuencia entera estrictamente creciente por sala, persistida con los efectos. Enviar después del commit. La primera respuesta del canal es instantánea; evento con secuencia ≤ última se ignora; un salto solicita GET de instantánea y bloquea comandos hasta reconciliar. Renovación sustituye el canal con nuevo Bearer manteniendo cuenta/miembro; una conexión nueva invalida la anterior. Detalles de autorización, buffers, latidos y plazo de 45 segundos se implementan/verifican en entrega 3.
+Evento: `{protocolVersion:1, roomId, sequence, type, serverTime, data}`. Secuencia entera estrictamente creciente por sala, persistida con los efectos. Enviar después del commit. La primera respuesta del canal es instantánea; evento con secuencia ≤ última se ignora; un salto solicita GET de instantánea y bloquea comandos hasta reconciliar. Renovación sustituye el canal con nuevo Bearer manteniendo cuenta/miembro; una conexión nueva invalida la anterior. Autorización, buffers, latidos y plazo de 45 segundos implementados en entrega 3; véase el protocolo abajo.
 
-Tipos reservados: MEMBER_JOINED, MEMBER_LEFT, HOST_CHANGED, SETTINGS_CHANGED, READY_CHANGED, MATCH_STARTED, PREPARATION_CONFIRMED, ROUND_STARTED, ACTION_RESOLVED, ZONE_CLAIMED, MESSAGE_CREATED, END_VOTE_OPENED, END_VOTE_UPDATED, END_VOTE_RESOLVED, MATCH_FINISHED. Cada evento ofrece la instantánea autorizada en `data`; MESSAGE_CREATED incluye mensaje `{id,sequence,kind:PLAYER|SYSTEM,authorMemberId,text,serverTime}`. Los mensajes SYSTEM se generan exclusivamente en Java.
+Tipos actuales y reservados: SNAPSHOT, MEMBER_CONNECTION_CHANGED, MEMBER_JOINED, MEMBER_LEFT, HOST_CHANGED, SETTINGS_CHANGED, READY_CHANGED, MATCH_STARTED, PREPARATION_CONFIRMED, ROUND_STARTED, ACTION_RESOLVED, ZONE_CLAIMED, MESSAGE_CREATED, END_VOTE_OPENED, END_VOTE_UPDATED, END_VOTE_RESOLVED, MATCH_FINISHED. Cada evento ofrece la instantánea autorizada en `data`; MESSAGE_CREATED incluye la instantánea con el mensaje en messages: `{id,sequence,kind:PLAYER|SYSTEM,authorMemberId,authorName,text,serverTime}`. Los mensajes SYSTEM se generan exclusivamente en Java.
 
 ## Errores
 
@@ -77,10 +79,31 @@ Regenerar intencionalmente con `flutter test tool/export_multiplayer_catalog_tes
 
 ## Alcance verificado de lobby
 
-Todas las rutas de sala responden 200 en éxito. GET /rooms enumera los lobbies, también los llenos, y devuelve currentRoomId para recuperar una pertenencia existente sin volver a unirse. GET /rooms/{id} solo es accesible para miembros activos de esa sala. Flutter consulta listado o instantánea cada tres segundos mientras esta pantalla está en primer plano; pausa al pasar a segundo plano. El canal WebSocket y el chat no están implementados todavía.
+Todas las rutas de sala responden 200 en éxito. GET /rooms enumera los lobbies, también los llenos, y devuelve currentRoomId para recuperar una pertenencia existente sin volver a unirse. GET /rooms/{id} solo es accesible para miembros activos de esa sala. Flutter consulta el listado cada tres segundos en primer plano. Dentro de una sala recibe eventos por WebSocket; deja de consultar GET periódicamente. En segundo plano cierra el canal y al volver recupera la instantánea.
 
-La presencia de sala caduca tras 45 segundos sin consultar su instantánea, por separado del heartbeat de cuenta. La renovación conserva el sid y el miembro. Logout/borrado retiran al miembro en la misma transacción de cuenta. La salida cambia anfitrión al conectado de mayor antigüedad y cierra una sala vacía. Los nombres e identidades de participación se conservan para el historial aunque se borre la cuenta. Estas comprobaciones cubren lobby/entrada a preparación; las reglas de victoria por abandono durante la partida corresponden a la entrega 5.
+Una vez enlazado el canal, la presencia de sala caduca tras 45 segundos sin latido de ese canal, por separado del heartbeat de cuenta. Consultar GET o cambiar Listo no prolonga una conexión perdida. Antes del primer canal se mantiene temporalmente la presencia HTTP de entrega 2. La renovación conserva el sid y el miembro. Logout/borrado retiran al miembro en la misma transacción de cuenta. La salida cambia anfitrión al conectado de mayor antigüedad y cierra una sala vacía. Los nombres e identidades de participación se conservan para el historial aunque se borre la cuenta. Estas comprobaciones cubren lobby/entrada a preparación; las reglas de victoria por abandono durante la partida corresponden a la entrega 5.
 
 POST /start crea una partida PREPARING, congela nivel, participantes y meta; no crea dados ni inicia el modo local. La interfaz muestra este estado sin permitir cambios de configuración. La preparación individual y las rondas se integran en entrega 4. En la entrega actual no se implementa una política de recuperación o cancelación de partidas en juego tras reiniciar Java.
 
-Recorrido real: `flutter test test/multiplayer/rooms_api_e2e_test.dart --dart-define=RUN_ROOMS_API_E2E=true`. Requiere JAR compilado y Java 21; ambos se pueden seleccionar con ROOMS_SERVER_JAR y ROOMS_SERVER_JAVA. El recorrido usa siete repositorios Dart independientes, un puerto libre y SQLite/cuentas temporales, y termina su proceso Java. Verifica lobby de seis, séptimo rechazado, aislamiento de otra sala, permisos, mismo identificador de preparación y transferencia de anfitrión; no acredita dados compartidos ni seis teléfonos físicos.
+Recorrido real: `flutter test test/multiplayer/rooms_api_e2e_test.dart --dart-define=RUN_ROOMS_API_E2E=true`. Requiere JAR compilado y Java 21; ambos se pueden seleccionar con ROOMS_SERVER_JAR y ROOMS_SERVER_JAVA. El recorrido usa siete repositorios Dart independientes, un puerto libre y SQLite/cuentas temporales, y termina su proceso Java. Verifica lobby de seis, séptimo rechazado, aislamiento de otra sala, permisos, seis canales, chat compartido, renovación/reconexión con la misma identidad, mismo identificador de preparación y transferencia de anfitrión; no acredita dados compartidos ni seis teléfonos físicos.
+
+
+## Canal e historial — entrega 3
+
+V004 añade vínculo de canal y mensajes. Mantiene los checksums V001/V002/V003. Los eventos y mensajes se insertan con los cambios y recibos de comandos; el canal lee únicamente filas confirmadas y realiza los envíos fuera de la transacción SQLite. Se envía un lote de hasta 32 eventos ordenados por conexión, con comprobación de sesión, miembro, canal vigente y vencimiento del Bearer antes de cada lote; los latidos también se autorizan. La sustitución concurrente se decide por el vínculo almacenado en SQLite, no por el orden de ejecución de callbacks.
+
+Primer frame: sobre de evento con type SNAPSHOT y data igual a GET /rooms/{id}. Después llegan eventos con secuencia creciente. Flutter ignora secuencias ya aplicadas, evita retroceder al recibir un recibo HTTP antiguo y ante un salto consulta GET y sustituye el canal para obtener una instantánea nueva. Mientras reconcilia, bloquea cambios de configuración, Listo, inicio y nuevos mensajes. Reintentar un comando aceptado conserva su commandId.
+
+Cliente → servidor: exclusivamente `{"type":"PING"}` cada 10 segundos. Servidor → cliente: `{"type":"PONG","serverTime":"..."}`, sin alterar la secuencia de sala. Flutter detecta 25 segundos sin respuesta y reintenta con esperas de 1, 2, 4 y hasta 8 segundos. Al cambiar Bearer cierra el canal anterior y abre otro; las generaciones descartan respuestas tardías y serializan aperturas pendientes.
+
+Cierres: 4001 sesión/token inválido, 4003 miembro retirado o presencia agotada, 4009 conexión sustituida. Un 4009 no provoca una pelea de reconexiones: el cliente muestra el estado y espera que el usuario pulse Actualizar. Los cortes transitorios reservan el lugar hasta 45 segundos y conservan Listo, mapa y rol; al vencer se aplica la salida existente una sola vez. La política de victoria por abandono durante rondas se integrará en entrega 5.
+
+Límites del canal: entrada de hasta 256 caracteres de texto o 256 bytes binarios, salida hasta 64 KiB, decorador serializado con buffer máximo 128 KiB. Ocho trabajadores y cola de 64 tareas separan los envíos de los hilos HTTP; Tomcat tiene límites de escritura y cierre de 1,5 segundos. Un cliente lento se cierra/reconecta. No se admiten credenciales en query ni redirecciones en el cliente Dart. Origin usa la política existente de orígenes explícitos; el cliente nativo envía Bearer en cabecera.
+
+Chat: texto plano de 1–300 puntos de código Unicode, sin controles salvo salto de línea. Solo Java crea SYSTEM (entrada, salida, cambio de anfitrión e inicio de preparación), con los nombres de participación. El usuario solo envía text y commandId; campos adicionales como kind se rechazan. Límite de 10 mensajes por cuenta cada 10 segundos, con 429 y Retry-After; reintentar un éxito previo no consume otro envío. Los mensajes pertenecen a la sala y conservan autor/nombre histórico tras borrar la cuenta.
+
+La instantánea contiene los últimos 20 mensajes; GET /messages?before=N obtiene los 20 anteriores en orden ascendente y devuelve nextBefore. El cliente conserva hasta 200 mensajes en memoria y detiene la carga al alcanzar ese límite. Muestra no leídos del historial cargado, conserva el borrador ante un resultado incierto y lo limpia al confirmar el mismo comando. El panel se cierra con el teclado abierto; logout/caducidad desmontan también el chat. La burbuja comparte la franja de controles del lobby sin superponerse al mapa.
+
+Los eventos actuales contienen estado público; ownBoard sigue vacío. Al integrar partidas, proyectar los tableros por participante antes de enviarlos: no incluir tableros privados de todos en un evento compartido. Votación, premios, finales, revancha y recuperación de partidas en juego tras reinicio permanecen pendientes.
+
+Referencias de implementación: [WebSocket en Spring Framework 6.2](https://docs.spring.io/spring-framework/reference/6.2/web/websocket/server.html), [WebSocket.connect de Dart](https://api.dart.dev/dart-io/WebSocket/connect.html) y [límites de Tomcat 10.1](https://tomcat.apache.org/tomcat-10.1-doc/web-socket-howto.html). No se actualizaron Spring Boot ni las versiones de reglas por esta entrega.

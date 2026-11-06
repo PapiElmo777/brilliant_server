@@ -315,7 +315,9 @@
             "END_VOTE_OPENED",
             "END_VOTE_UPDATED",
             "END_VOTE_RESOLVED",
-            "MATCH_FINISHED"
+            "MATCH_FINISHED",
+            "SNAPSHOT",
+            "MEMBER_CONNECTION_CHANGED"
           ]
         },
         "serverTime": {
@@ -323,7 +325,7 @@
           "format": "date-time"
         },
         "data": {
-          "type": "object"
+          "$ref": "#/$defs/snapshot"
         }
       },
       "required": [
@@ -464,7 +466,11 @@
           ]
         },
         "messages": {
-          "type": "array"
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/chatMessage"
+          }
         }
       },
       "required": [
@@ -549,6 +555,118 @@
         "currentRoomId"
       ],
       "additionalProperties": false
+    },
+    "chatMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": [
+            "PLAYER",
+            "SYSTEM"
+          ]
+        },
+        "authorMemberId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authorName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "kind",
+        "authorMemberId",
+        "authorName",
+        "text",
+        "serverTime"
+      ],
+      "additionalProperties": false
+    },
+    "historyResponse": {
+      "type": "object",
+      "properties": {
+        "messages": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/chatMessage"
+          }
+        },
+        "nextBefore": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "messages",
+        "nextBefore"
+      ],
+      "additionalProperties": false
+    },
+    "ping": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "PING"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "pong": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "PONG"
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "serverTime"
+      ],
+      "additionalProperties": false
+    },
+    "serverFrame": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/event"
+        },
+        {
+          "$ref": "#/$defs/pong"
+        }
+      ]
     }
   }
 }

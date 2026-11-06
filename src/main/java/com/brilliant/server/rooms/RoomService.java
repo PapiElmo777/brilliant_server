@@ -22,10 +22,11 @@ public class RoomService {
     private final Accounts accounts;
     private final Clock clock;
     private final ObjectMapper json;
+    private final RateLimits limits;
     private final SecureRandom random = new SecureRandom();
     private final BoardCatalog catalog = new BoardCatalog();
-    public RoomService(JdbcTemplate db, TransactionTemplate tx, Accounts accounts, Clock clock, ObjectMapper json) {
-        this.db = db; this.tx = tx; this.accounts = accounts; this.clock = clock; this.json = json;
+    public RoomService(JdbcTemplate db, TransactionTemplate tx, Accounts accounts, Clock clock, ObjectMapper json, RateLimits limits) {
+        this.db = db; this.tx = tx; this.accounts = accounts; this.clock = clock; this.json = json; this.limits = limits;
     }
     private String now() { return clock.instant().toString(); }
     private static void fail(int status, String code) { throw new ApiException(status, code); }
@@ -110,7 +111,7 @@ public class RoomService {
             accounts.requireActive(user,sid); room(id);
             var member = member(id,user);
             if (!sid.equals(member.get("session_id"))) fail(403,"NOT_ROOM_MEMBER");
-            db.update("UPDATE room_members SET last_seen_at=? WHERE id=?",now(),member.get("id"));
+            db.update("UPDATE room_members SET last_seen_at=? WHERE id=? AND channel_id IS NULL",now(),member.get("id"));
             return snapshot(id);
         });
     }
@@ -123,7 +124,7 @@ public class RoomService {
             db.update("INSERT INTO rooms(id,name,capacity,state,created_at) VALUES(?,?,?,'LOBBY',?)",id,name.strip(),capacity,now());
             String mid = addMember(id,user,sid);
             db.update("UPDATE rooms SET host_member_id=? WHERE id=?",mid,id);
-            event(id,"MEMBER_JOINED"); return id;
+            event(id,"MEMBER_JOINED",accounts.byId(user).user().username()+" se unió a la sala."); return id;
         });
     }
     private void available(String user) {
@@ -140,7 +141,7 @@ public class RoomService {
         return command(user,sid,cid,"join",id,body,() -> {
             var room = room(id); lobby(room); available(user);
             if (members(id).size() >= ((Number)room.get("capacity")).intValue()) fail(409,"ROOM_FULL");
-            addMember(id,user,sid); event(id,"MEMBER_JOINED"); return id;
+            addMember(id,user,sid); event(id,"MEMBER_JOINED",accounts.byId(user).user().username()+" se unió a la sala."); return id;
         });
     }
     public Map<String,Object> settings(String id, String user, String sid, String cid, JsonNode body, Long expected, Integer capacity, String level, boolean chooseRandom) {
@@ -160,7 +161,7 @@ public class RoomService {
         return command(user,sid,cid,"ready",id,body,() -> {
             var room = room(id); var member = member(id,user); lobby(room); revision(room,expected);
             if (member.get("id").equals(room.get("host_member_id"))) fail(409,"HOST_STARTS_MATCH");
-            db.update("UPDATE room_members SET ready=?,last_seen_at=? WHERE id=?",ready ? 1 : 0,now(),member.get("id"));
+            db.update("UPDATE room_members SET ready=?,last_seen_at=CASE WHEN channel_id IS NULL THEN ? ELSE last_seen_at END WHERE id=?",ready ? 1 : 0,now(),member.get("id"));
             event(id,"READY_CHANGED"); return id;
         });
     }
@@ -196,19 +197,22 @@ public class RoomService {
         } else if (member.get("id").equals(room.get("host_member_id"))) {
             var next = remaining.stream().filter(this::connected).findFirst().orElse(remaining.getFirst());
             db.update("UPDATE rooms SET host_member_id=?,revision=revision+1 WHERE id=?",next.get("id"),id);
-            event(id,"HOST_CHANGED");
+            event(id,"HOST_CHANGED",next.get("username")+" es el nuevo anfitrión.");
         }
-        event(id,"MEMBER_LEFT");
+        event(id,"MEMBER_LEFT",member.get("username")+" salió de la sala.");
     }
-    private boolean connected(Map<String,Object> member) {
+    private boolean alive(Map<String,Object> member) {
         return member.get("user_id") != null && accounts.active((String)member.get("user_id"),(String)member.get("session_id"),false)
             && Instant.parse((String)member.get("last_seen_at")).plusSeconds(45).isAfter(clock.instant());
+    }
+    private boolean connected(Map<String,Object> member) {
+        return alive(member) && (member.get("channel_id") == null || ((Number)member.get("channel_connected")).intValue() == 1);
     }
     @Scheduled(initialDelay=5000,fixedDelay=5000)
     public void expireMembers() {
         Database.write(tx, () -> {
             for (var member : db.queryForList("SELECT * FROM room_members WHERE left_at IS NULL ORDER BY room_id,join_order")) {
-                if (!connected(member)) remove(member);
+                if (!alive(member)) remove(member);
             }
             return null;
         });
@@ -229,7 +233,7 @@ public class RoomService {
         room.put("hostMemberId",r.get("host_member_id")); room.put("levelId",r.get("level_id")); room.put("members",publicMembers(members(id)));
         var result = new LinkedHashMap<String,Object>();
         result.put("protocolVersion",1); result.put("rulesVersion",1); result.put("roomId",id); result.put("sequence",r.get("sequence"));
-        result.put("serverTime",now()); result.put("room",room); result.put("messages",List.of()); result.put("match",null);
+        result.put("serverTime",now()); result.put("room",room); result.put("messages",historyRows(id,Long.MAX_VALUE,20)); result.put("match",null);
         var matches = db.queryForList("SELECT * FROM room_matches WHERE room_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1",id);
         if (!matches.isEmpty()) {
             var m = matches.getFirst(); var match = new LinkedHashMap<String,Object>();
@@ -240,7 +244,98 @@ public class RoomService {
         }
         return result;
     }
-    private void event(String id, String type) {
+    private void insertMessage(String id, String kind, String author, String name, String text) {
+        long sequence = db.queryForObject("SELECT sequence+1 FROM rooms WHERE id=?",Long.class,id);
+        db.update("INSERT INTO room_messages VALUES(?,?,?,?,?,?,?,?)",UUID.randomUUID().toString(),id,sequence,kind,author,name,text,now());
+    }
+    private List<Map<String,Object>> historyRows(String id, long before, int limit) {
+        var rows = db.queryForList("SELECT * FROM room_messages WHERE room_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?",id,before,limit);
+        Collections.reverse(rows);
+        var result = new ArrayList<Map<String,Object>>();
+        for (var row : rows) {
+            var message = new LinkedHashMap<String,Object>();
+            message.put("id",row.get("id")); message.put("sequence",row.get("sequence")); message.put("kind",row.get("kind"));
+            message.put("authorMemberId",row.get("author_member_id")); message.put("authorName",row.get("author_name"));
+            message.put("text",row.get("text")); message.put("serverTime",row.get("server_time")); result.add(message);
+        }
+        return result;
+    }
+    public Map<String,Object> messages(String id, String user, String sid, Long before) {
+        if (before != null && before < 1) fail(400,"VALIDATION_ERROR");
+        return Database.write(tx,() -> {
+            accounts.requireActive(user,sid); room(id); member(id,user);
+            var messages = historyRows(id,before == null ? Long.MAX_VALUE : before,20);
+            var result = new LinkedHashMap<String,Object>(); result.put("messages",messages);
+            result.put("nextBefore",messages.isEmpty() ? null : messages.getFirst().get("sequence"));
+            return result;
+        });
+    }
+    public Map<String,Object> message(String id,String user,String sid,String cid,JsonNode body,String text) {
+        if (text == null || text.strip().isEmpty() || text.codePointCount(0,text.length()) > 300
+                || text.codePoints().anyMatch(c -> Character.isISOControl(c) && c != '\n')) fail(400,"VALIDATION_ERROR");
+        return command(user,sid,cid,"message",id,body,() -> {
+            var r = room(id); var m = member(id,user);
+            if ("CLOSED".equals(r.get("state"))) fail(403,"NOT_ROOM_MEMBER");
+            limits.hit("chat:"+user,10,Duration.ofSeconds(10));
+            insertMessage(id,"PLAYER",(String)m.get("id"),(String)m.get("username"),text.strip());
+            event(id,"MESSAGE_CREATED"); return id;
+        });
+    }
+    public Map<String,Object> authorizeChannel(String id,String user,String sid) {
+        expireMembers();
+        return Database.write(tx,() -> { accounts.requireActive(user,sid); room(id); return member(id,user); });
+    }
+    public Map<String,Object> bindChannel(String id,String user,String sid,String channelId) {
+        expireMembers();
+        return Database.write(tx,() -> {
+            accounts.requireActive(user,sid); room(id); var m = member(id,user);
+            if (!sid.equals(m.get("session_id"))) fail(403,"NOT_ROOM_MEMBER");
+            boolean reconnecting = m.get("channel_id") != null && !connected(m);
+            db.update("UPDATE room_members SET channel_id=?,channel_connected=1,last_seen_at=? WHERE id=?",channelId,now(),m.get("id"));
+            if (reconnecting) event(id,"MEMBER_CONNECTION_CHANGED");
+            return snapshot(id);
+        });
+    }
+    public void disconnectChannel(String id,String user,String channelId) {
+        Database.write(tx,() -> {
+            int count = db.update("UPDATE room_members SET channel_connected=0 WHERE room_id=? AND user_id=? AND channel_id=? AND channel_connected=1 AND left_at IS NULL",id,user,channelId);
+            if (count > 0) event(id,"MEMBER_CONNECTION_CHANGED");
+            return null;
+        });
+    }
+    private void requireChannel(String id,String user,String sid,String channelId) {
+        accounts.requireActive(user,sid); var m = member(id,user);
+        if (!channelId.equals(m.get("channel_id"))) fail(409,"CHANNEL_REPLACED");
+        if (!alive(m)) fail(403,"NOT_ROOM_MEMBER");
+    }
+    public void channelPing(String id,String user,String sid,String channelId) {
+        Database.write(tx,() -> {
+            requireChannel(id,user,sid,channelId);
+            db.update("UPDATE room_members SET last_seen_at=? WHERE room_id=? AND user_id=? AND channel_id=? AND left_at IS NULL",now(),id,user,channelId);
+            return null;
+        });
+    }
+    /** Reads only committed rows. Never performs network I/O while SQLite holds a transaction. */
+    public List<Map<String,Object>> channelEvents(String id,String user,String sid,String channelId,long after) {
+        return Database.write(tx,() -> {
+            requireChannel(id,user,sid,channelId);
+            var result = new ArrayList<Map<String,Object>>();
+            for (var row : db.queryForList("SELECT * FROM room_events WHERE room_id=? AND sequence>? ORDER BY sequence LIMIT 32",id,after)) {
+                result.add(Map.of("protocolVersion",1,"roomId",id,"sequence",row.get("sequence"),"type",row.get("type"),"serverTime",row.get("server_time"),"data",decode((String)row.get("data_json"))));
+            }
+            return result;
+        });
+    }
+    private void event(String id, String type) { event(id,type,null); }
+    private void event(String id,String type,String systemText) {
+        String system = systemText!=null ? systemText : switch(type) {
+            case "MEMBER_JOINED" -> "Un participante se unió a la sala.";
+            case "MEMBER_LEFT" -> "Un participante salió de la sala.";
+            case "HOST_CHANGED" -> "La sala tiene un nuevo anfitrión.";
+            case "MATCH_STARTED" -> "Comienza la preparación de la partida.";
+            default -> null;
+        };
+        if (system != null) insertMessage(id,"SYSTEM",null,null,system);
         db.update("UPDATE rooms SET sequence=sequence+1 WHERE id=?",id);
         var snapshot = snapshot(id);
         db.update("INSERT INTO room_events VALUES(?,?,?,?,?)",id,snapshot.get("sequence"),type,now(),encode(snapshot));

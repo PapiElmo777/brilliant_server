@@ -1,6 +1,6 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; las rondas en línea y el chat siguen pendientes.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; las rondas en línea siguen pendientes.
 
 ## Arranque en la red local
 
@@ -91,3 +91,16 @@ SQLite V003 conserva V001/V002 y agrega pertenencia única por cuenta, recibos i
 Verificación: **376 pruebas Flutter aprobadas**, dos recorridos JAR optativos omitidos en la suite normal, análisis sin avisos, **43 pruebas Java aprobadas**, reapertura V003 e identidades históricas. Se ejecutó aparte el [recorrido real de salas](contracts/multiplayer-v1.md): siete clientes Dart independientes contra el JAR, seis en una sala, séptimo rechazado y otra sala aislada, preparación común y transferencia de anfitrión. No es una prueba de seis teléfonos ni de dados compartidos. Capturas de menú/lobby revisadas; pruebas de 320×568, 390×844, horizontal y texto 2× sin desbordamientos.
 
 El JAR estándar actualizado y el APK Android Debug están generados. Antes de arrancarlo sobre una base existente, respaldar SQLite con el proceso detenido: V003 se aplicará al arrancar y no se debe volver a un JAR que solo conozca V001/V002. Las pruebas usaron carpetas y cuentas temporales. El merge a `main` se mantiene reservado para completar y verificar todo el multijugador.
+
+
+## Canal de eventos y chat: 6 de noviembre de 2026
+
+Implementada la entrega 3 en **`multiplayer`**. El lobby recibe instantánea y eventos ordenados por WebSocket, comprueba saltos/duplicados y reconecta conservando identidad, mapa y Listo. La renovación de token sustituye el canal; aperturas simultáneas dejan vigente el último vínculo confirmado. Bearer solo en cabecera, sin query ni redirecciones, con autorización y caducidad comprobadas durante toda la conexión.
+
+Chat disponible en lobby y preparación: burbuja con no leídos junto a los controles, mensajes de sistema y jugadores diferenciados, historial paginado y borrador conservado ante respuestas inciertas. Texto plano de hasta 300 puntos de código, 10 mensajes por cuenta cada 10 segundos, reintentos idempotentes y Retry-After. El servidor conserva historial; el cliente carga páginas de 20 y hasta 200 mensajes en memoria. Se mantienen los botones uniformes del menú principal.
+
+V004 incorpora presencia de canal y mensajes sin cambiar migraciones aplicadas. Una vez enlazado, solo sus latidos mantienen la presencia de sala; consultar la cuenta o GET no oculta un canal perdido. Se reserva el lugar hasta 45 segundos y se recupera el mismo miembro dentro del plazo. El canal lee eventos después del commit, usa envíos acotados y evita que un cliente lento bloquee a otros. Las reglas de abandono y victoria durante rondas pertenecen a entrega 5.
+
+Verificación: **394 pruebas Flutter aprobadas**, análisis sin avisos, **51 pruebas Java aprobadas** y recorrido real adicional contra el JAR con **seis canales Dart y otra sala aislada**: chat común, reconexión, renovación, mapa/Listo, latidos y preparación. Pruebas de teclado, texto 2×, envío incierto y logout con chat abierto. Capturas revisadas y JAR/APK Debug generados. Los dos recorridos JAR optativos se omiten en la suite normal; el de salas se ejecutó por separado. No representa seis teléfonos físicos ni una partida con dados compartidos.
+
+El [contrato actualizado](contracts/multiplayer-v1.md) detalla frames, cierre, límites e historial. La siguiente entrega integra preparación individual y rondas de 60 segundos. No se reinició el servidor LAN ni se tocaron las cuentas reales. Respaldar SQLite con el servidor detenido antes de arrancar este JAR sobre datos existentes: aplicará V004 y después no se debe arrancar un JAR que solo conozca V003. No se ha hecho merge a `main`.

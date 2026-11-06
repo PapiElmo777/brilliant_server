@@ -54,6 +54,12 @@ public class RoomsController {
         if (!b.path("ready").isBoolean()) throw new ApiException(400,"VALIDATION_ERROR");
         return rooms.ready(id,jwt.getSubject(),sid(jwt),cid,b,revision(b),b.path("ready").booleanValue());
     }
+    @GetMapping("/{id}/messages") Object history(@PathVariable String id,@RequestParam(required=false) Long before,@AuthenticationPrincipal Jwt jwt) {
+        return rooms.messages(id,jwt.getSubject(),sid(jwt),before);
+    }
+    @PostMapping("/{id}/messages") Object message(@PathVariable String id,@RequestBody JsonNode b,@AuthenticationPrincipal Jwt jwt) {
+        return rooms.message(id,jwt.getSubject(),sid(jwt),command(b,"text"),b,text(b,"text"));
+    }
     @PostMapping("/{id}/start") Object start(@PathVariable String id,@RequestBody JsonNode b,@AuthenticationPrincipal Jwt jwt) {
         return rooms.start(id,jwt.getSubject(),sid(jwt),command(b,"expectedRevision"),b,revision(b));
     }

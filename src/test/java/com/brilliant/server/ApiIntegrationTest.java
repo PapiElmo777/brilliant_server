@@ -260,6 +260,140 @@ class ApiIntegrationTest {
         error(request("POST","/rooms",Map.of("commandId","invalido","name","Sala","capacity",2),access(host)),400,"VALIDATION_ERROR");
         error(request("GET","/rooms",null,null),401,"UNAUTHORIZED");
     }
+    final class ChannelProbe implements WebSocket.Listener,AutoCloseable {
+        final BlockingQueue<JsonNode> frames=new LinkedBlockingQueue<>();
+        final CompletableFuture<Integer> closed=new CompletableFuture<>();
+        final StringBuilder text=new StringBuilder();
+        WebSocket socket;
+        public void onOpen(WebSocket ws) {socket=ws;ws.request(1);}
+        public CompletionStage<?> onText(WebSocket ws,CharSequence part,boolean last) {
+            text.append(part);if(last) {try{frames.add(json.readTree(text.toString()));text.setLength(0);}catch(Exception e){throw new RuntimeException(e);}}
+            ws.request(1);return null;
+        }
+        public CompletionStage<?> onClose(WebSocket ws,int code,String reason) {closed.complete(code);return null;}
+        public void onError(WebSocket ws,Throwable error) {closed.completeExceptionally(error);}
+        JsonNode next(String type) throws Exception {
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
+            while(System.nanoTime()<until) {
+                var frame=frames.poll(200,TimeUnit.MILLISECONDS);
+                if(frame!=null && type.equals(frame.path("type").asText())) return frame;
+            }
+            fail("No llegó el evento "+type);return null;
+        }
+        public void close() {if(socket!=null) {try{socket.sendClose(1000,"").get(2,TimeUnit.SECONDS);}catch(Exception e){socket.abort();}}}
+    }
+    ChannelProbe channel(Reply account,String id) {
+        var probe=new ChannelProbe();
+        probe.socket=client.newWebSocketBuilder().header("Authorization","Bearer "+access(account))
+            .buildAsync(URI.create("ws://127.0.0.1:"+port+"/api/v1/rooms/"+id+"/events"),probe).join();
+        return probe;
+    }
+    @Test void socketReceivesCommittedChatOnlyOnceAndRestoresIdentityOnReconnect() throws Exception {
+        Reply host=register(),guest=register();
+        String id=roomId(roomCommand("POST","/rooms",host,Map.of("name","Canal","capacity",6)));
+        roomCommand("POST","/rooms/"+id+"/join",guest,Map.of());
+        try(var a=channel(host,id);var b=channel(guest,id)) {
+            var initial=a.next("SNAPSHOT");b.next("SNAPSHOT");
+            String memberId=initial.at("/data/room/members/1/memberId").asText();
+            var body=Map.of("commandId",UUID.randomUUID().toString(),"text","Hola 🚀 <b>texto plano</b>");
+            var accepted=request("POST","/rooms/"+id+"/messages",body,access(guest));assertEquals(200,accepted.status);
+            var received=a.next("MESSAGE_CREATED");var own=b.next("MESSAGE_CREATED");
+            assertEquals(accepted.body.path("sequence"),received.path("sequence"));
+            assertEquals(received.path("sequence"),own.path("sequence"));
+            var messages=received.at("/data/messages");var last=messages.get(messages.size()-1);
+            assertEquals("PLAYER",last.path("kind").asText());assertEquals(memberId,last.path("authorMemberId").asText());
+            assertEquals("Hola 🚀 <b>texto plano</b>",last.path("text").asText());
+            assertEquals(accepted.body,request("POST","/rooms/"+id+"/messages",body,access(guest)).body);
+            assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_messages WHERE room_id=? AND kind='PLAYER'",Integer.class,id));
+            b.close();
+            // GET cannot conceal a lost channel; reconnect retains the same participant.
+            clock.now=clock.now.plusSeconds(20);
+            request("GET","/users/me",null,access(host));request("GET","/users/me",null,access(guest));
+            try(var reconnected=channel(guest,id)) {
+                var restored=reconnected.next("SNAPSHOT");
+                assertEquals(memberId,restored.at("/data/room/members/1/memberId").asText());
+                assertTrue(restored.at("/data/room/members/1/connected").asBoolean());
+                assertEquals(last.path("id"),restored.at("/data/messages").get(restored.at("/data/messages").size()-1).path("id"));
+            }
+        }
+    }
+    @Test void channelRejectsOtherRoomsQueriesAndUnauthorizedHandshakes() throws Exception {
+        Reply owner=register(),other=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Privada","capacity",2)));
+        var ex=assertThrows(CompletionException.class,()->channel(other,id));
+        assertEquals(403,((WebSocketHandshakeException)ex.getCause()).getResponse().statusCode());
+        var query=assertThrows(CompletionException.class,()->client.newWebSocketBuilder().header("Authorization","Bearer "+access(owner))
+            .buildAsync(URI.create("ws://127.0.0.1:"+port+"/api/v1/rooms/"+id+"/events?token=prohibido"),new ChannelProbe()).join());
+        assertEquals(400,((WebSocketHandshakeException)query.getCause()).getResponse().statusCode());
+        var noAuth=assertThrows(CompletionException.class,()->client.newWebSocketBuilder()
+            .buildAsync(URI.create("ws://127.0.0.1:"+port+"/api/v1/rooms/"+id+"/events"),new ChannelProbe()).join());
+        assertEquals(401,((WebSocketHandshakeException)noAuth.getCause()).getResponse().statusCode());
+        error(roomCommand("POST","/rooms/"+id+"/messages",other,Map.of("text","Intruso")),403,"NOT_ROOM_MEMBER");
+        error(request("GET","/rooms/"+id+"/messages",null,access(other)),403,"NOT_ROOM_MEMBER");
+    }
+    @Test void chatHistoryPaginationRateLimitAndSystemForgeryAreControlled() throws Exception {
+        Reply owner=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Historial","capacity",2)));
+        long sequence=db.queryForObject("SELECT sequence FROM rooms WHERE id=?",Long.class,id);
+        error(roomCommand("POST","/rooms/"+id+"/messages",owner,Map.of("text","Soy sistema","kind","SYSTEM")),400,"VALIDATION_ERROR");
+        error(roomCommand("POST","/rooms/"+id+"/messages",owner,Map.of("text","x".repeat(301))),400,"VALIDATION_ERROR");
+        assertEquals(sequence,db.queryForObject("SELECT sequence FROM rooms WHERE id=?",Long.class,id));
+        for(int i=0;i<10;i++) assertEquals(200,roomCommand("POST","/rooms/"+id+"/messages",owner,Map.of("text","Mensaje "+i)).status);
+        var limited=roomCommand("POST","/rooms/"+id+"/messages",owner,Map.of("text","Demasiados"));error(limited,429,"RATE_LIMITED");
+        assertTrue(Integer.parseInt(limited.headers.firstValue("retry-after").orElseThrow())>0);
+        clock.now=clock.now.plusSeconds(11);request("GET","/users/me",null,access(owner));
+        for(int i=10;i<20;i++) assertEquals(200,roomCommand("POST","/rooms/"+id+"/messages",owner,Map.of("text","Mensaje "+i)).status);
+        var page=request("GET","/rooms/"+id+"/messages",null,access(owner));assertEquals(20,page.body.path("messages").size());
+        var older=request("GET","/rooms/"+id+"/messages?before="+page.body.path("nextBefore").asLong(),null,access(owner));
+        assertEquals(1,older.body.path("messages").size());assertEquals("SYSTEM",older.body.at("/messages/0/kind").asText());
+    }
+    @Test void channelReplacementAndSessionRevocationCloseOldSockets() throws Exception {
+        Reply owner=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Renovación","capacity",2)));
+        try(var old=channel(owner,id)) {
+            old.next("SNAPSHOT");var rotated=request("POST","/auth/refresh",Map.of("refreshToken",refresh(owner)),null);
+            try(var replacement=channel(rotated,id)) {
+                var initial=replacement.next("SNAPSHOT");assertEquals(1,initial.at("/data/room/members").size());
+                assertEquals(4009,old.closed.get(8,TimeUnit.SECONDS));
+                replacement.socket.sendText("{\"type\":\"PING\"}",true).join();replacement.next("PONG");
+                assertEquals(204,request("POST","/auth/logout",null,access(rotated)).status);
+                assertTrue(Set.of(4001,4003).contains(replacement.closed.get(8,TimeUnit.SECONDS)));
+            }
+        }
+    }
+    @Test void channelExpiryAndInvalidFramesCannotKeepMembershipAlive() throws Exception {
+        Reply owner=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Caducidad","capacity",2)));
+        try(var socket=channel(owner,id)) {
+            socket.next("SNAPSHOT");socket.socket.sendText("{\"type\":\"MESSAGE_CREATED\",\"text\":\"Falso\"}",true).join();
+            assertEquals(1008,socket.closed.get(8,TimeUnit.SECONDS));
+        }
+        clock.now=clock.now.plusSeconds(30);request("GET","/users/me",null,access(owner));
+        assertEquals(200,request("GET","/rooms/"+id,null,access(owner)).status);
+        clock.now=clock.now.plusSeconds(15);
+        error(request("GET","/rooms/"+id,null,access(owner)),403,"NOT_ROOM_MEMBER");
+    }
+    @Test void openChannelStopsAuthorizingAsSoonAsItsBearerExpires() throws Exception {
+        Reply owner=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Token corto","capacity",2)));
+        var probe=new ChannelProbe();
+        probe.socket=client.newWebSocketBuilder().header("Authorization","Bearer "+signed(owner,"brilliant-game",clock.instant().plusSeconds(1)))
+            .buildAsync(URI.create("ws://127.0.0.1:"+port+"/api/v1/rooms/"+id+"/events"),probe).join();
+        try(probe) {
+            probe.next("SNAPSHOT");clock.now=clock.now.plusSeconds(2);
+            assertEquals(4001,probe.closed.get(8,TimeUnit.SECONDS));
+            assertEquals(200,request("GET","/users/me",null,access(owner)).status);
+        }
+    }
+    @Test void simultaneousHandshakesKeepExactlyOneWorkingConnection() throws Exception {
+        Reply owner=register();String id=roomId(roomCommand("POST","/rooms",owner,Map.of("name","Dos canales","capacity",2)));
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var first=pool.submit(()->channel(owner,id));var second=pool.submit(()->channel(owner,id));
+            try(var a=first.get(8,TimeUnit.SECONDS);var b=second.get(8,TimeUnit.SECONDS)) {
+                assertEquals(4009,CompletableFuture.anyOf(a.closed,b.closed).get(8,TimeUnit.SECONDS));
+                assertNotEquals(a.closed.isDone(),b.closed.isDone());
+                var survivor=a.closed.isDone()?b:a;
+                survivor.next("SNAPSHOT");survivor.socket.sendText("{\"type\":\"PING\"}",true).join();survivor.next("PONG");
+                assertFalse(survivor.closed.isDone());
+                assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE room_id=? AND left_at IS NULL",Integer.class,id));
+            }
+        }
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");
