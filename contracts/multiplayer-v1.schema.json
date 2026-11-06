@@ -460,9 +460,13 @@
           "$ref": "#/$defs/room"
         },
         "match": {
-          "type": [
-            "object",
-            "null"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/match"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "messages": {
@@ -667,6 +671,188 @@
           "$ref": "#/$defs/pong"
         }
       ]
+    },
+    "ownAction": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "PLACE",
+            "SKIP"
+          ]
+        },
+        "dieIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cellId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "PLAYER",
+            "TIMEOUT"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "dieIndex",
+        "cellId",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "round": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dice": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          }
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedMemberIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "ownAction": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ownAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "dice",
+        "startedAt",
+        "deadline",
+        "resolvedMemberIds",
+        "ownAction"
+      ],
+      "additionalProperties": false
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "enum": [
+            "PREPARING",
+            "ROUND_ACTIVE"
+          ]
+        },
+        "levelId": {
+          "enum": [
+            "tablero_01",
+            "tablero_02",
+            "tablero_03",
+            "tablero_04"
+          ]
+        },
+        "target": {
+          "enum": [
+            20,
+            22,
+            24,
+            26
+          ]
+        },
+        "participants": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": {
+            "type": "object"
+          }
+        },
+        "preparedMemberIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "ownPreparationConfirmed": {
+          "type": "boolean"
+        },
+        "ownBoard": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^f[1-7]_c[1-7]$"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          }
+        },
+        "round": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/round"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "levelId",
+        "target",
+        "participants",
+        "preparedMemberIds",
+        "ownPreparationConfirmed",
+        "ownBoard",
+        "round",
+        "result"
+      ],
+      "additionalProperties": false
     }
   }
 }

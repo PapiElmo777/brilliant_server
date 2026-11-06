@@ -1,6 +1,6 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; las rondas en línea siguen pendientes.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; preparación individual y rondas comunes de 60 segundos están implementadas; premios globales y final siguen pendientes.
 
 ## Arranque en la red local
 
@@ -104,3 +104,14 @@ V004 incorpora presencia de canal y mensajes sin cambiar migraciones aplicadas. 
 Verificación: **394 pruebas Flutter aprobadas**, análisis sin avisos, **51 pruebas Java aprobadas** y recorrido real adicional contra el JAR con **seis canales Dart y otra sala aislada**: chat común, reconexión, renovación, mapa/Listo, latidos y preparación. Pruebas de teclado, texto 2×, envío incierto y logout con chat abierto. Capturas revisadas y JAR/APK Debug generados. Los dos recorridos JAR optativos se omiten en la suite normal; el de salas se ejecutó por separado. No representa seis teléfonos físicos ni una partida con dados compartidos.
 
 El [contrato actualizado](contracts/multiplayer-v1.md) detalla frames, cierre, límites e historial. La siguiente entrega integra preparación individual y rondas de 60 segundos. No se reinició el servidor LAN ni se tocaron las cuentas reales. Respaldar SQLite con el servidor detenido antes de arrancar este JAR sobre datos existentes: aplicará V004 y después no se debe arrancar un JAR que solo conozca V003. No se ha hecho merge a `main`.
+
+
+## Multijugador, entrega 4 — preparación individual y rondas compartidas (6 de noviembre de 2026)
+
+Implementadas y verificadas las entregas 1–4 en `multiplayer`. Preparación manual privada de 1–6, confirmación definitiva y espera de todos los activos. Java genera dados comunes y rondas de exactamente 60 segundos; valida una sola colocación u omisión por participante y ronda. El timeout convierte pendientes en omisión y el avance es único incluso frente a acciones concurrentes.
+
+V005 conserva V001–V004, migra participantes PREPARING y persiste tableros, rondas, acciones y proyecciones privadas por evento. HTTP y seis canales reciben exclusivamente su propio tablero; reconectar restaura la misma ronda. Flutter usa reloj monotónico anclado al servidor, propuestas locales, confirmación, omisión y animación de los dados recibidos. Se conserva Listo al cambiar configuración y el estilo uniforme del menú.
+
+Verificación: 412 pruebas Flutter, análisis sin avisos, 59 pruebas Java y recorrido adicional de siete clientes/seis canales contra el JAR temporal: seis preparaciones diferentes, privacidad, dados/plazo iguales, colocación, omisiones, ronda siguiente, rechazo de ronda antigua y reconexión. Java verifica además timeout a los 60 segundos, carreras y migración V004→V005. Seis capturas nuevas revisadas en tres tamaños; controles probados con texto 2×. JAR y APK Debug generados.
+
+Todo permanece en `multiplayer`, con commits en español y sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales; respaldar SQLite con el proceso detenido antes de aplicar V005. La siguiente entrega es la 5: reclamos/premios transaccionales, continuidad, victoria y votación. No se han añadido puntos globales, final, ranking ni revancha en esta fase. Se mantienen pendientes las decisiones explícitas del plan local.

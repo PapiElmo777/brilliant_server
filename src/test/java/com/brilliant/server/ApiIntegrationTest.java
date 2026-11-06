@@ -394,6 +394,132 @@ class ApiIntegrationTest {
             }
         }
     }
+    @Autowired com.brilliant.server.rooms.RoomService roomService;
+    record GameSetup(List<Reply> players,String room,String match) {}
+    GameSetup game(int count) throws Exception {
+        var players=new ArrayList<Reply>();for(int i=0;i<count;i++) players.add(register());
+        String room=roomId(roomCommand("POST","/rooms",players.getFirst(),Map.of("name","Rondas","capacity",6)));
+        for(int i=1;i<count;i++) roomCommand("POST","/rooms/"+room+"/join",players.get(i),Map.of());
+        roomCommand("PATCH","/rooms/"+room+"/settings",players.getFirst(),Map.of("expectedRevision",0,"capacity",6,"levelId","tablero_01"));
+        for(int i=1;i<count;i++) roomCommand("PUT","/rooms/"+room+"/ready",players.get(i),Map.of("expectedRevision",1,"ready",true));
+        var started=roomCommand("POST","/rooms/"+room+"/start",players.getFirst(),Map.of("expectedRevision",1));
+        assertEquals(200,started.status);return new GameSetup(players,room,started.body.at("/data/match/id").asText());
+    }
+    Map<String,Integer> preparation(int offset) throws Exception {
+        try(var stream=getClass().getResourceAsStream("/multiplayer/parity-v1.json")) {
+            for(var state:json.readTree(stream).path("states")) if(state.path("preparation").asBoolean() && state.path("boardId").asText().equals("tablero_01")) {
+                var values=new LinkedHashMap<String,Integer>();state.path("placements").fields().forEachRemaining(e->values.put(e.getKey(),(e.getValue().asInt()-1+offset)%6+1));return values;
+            }
+        }
+        throw new IllegalStateException("Falta la preparación compartida");
+    }
+    Reply prepare(GameSetup game,int player) throws Exception {
+        return roomCommand("PUT","/matches/"+game.match+"/preparation",game.players.get(player),Map.of("placements",preparation(player)));
+    }
+    Reply preparedGame(GameSetup game) throws Exception {
+        Reply latest=null;for(int i=0;i<game.players.size();i++) {latest=prepare(game,i);assertEquals(200,latest.status);}return latest;
+    }
+    void healthyActivity() {
+        db.update("UPDATE sessions SET last_seen_at=? WHERE revoked_at IS NULL",clock.now.toString());
+        db.update("UPDATE room_members SET last_seen_at=? WHERE left_at IS NULL",clock.now.toString());
+    }
+    @Test void sixIndependentPreparationsStartOneCommonRoundAndNeverExposeOtherBoards() throws Exception {
+        var game=game(6);var channels=new ArrayList<ChannelProbe>();
+        try {
+            for(var player:game.players) {var c=channel(player,game.room);c.next("SNAPSHOT");channels.add(c);}
+            for(int actor=0;actor<6;actor++) {
+                var accepted=prepare(game,actor);assertEquals(200,accepted.status);
+                for(int viewer=0;viewer<6;viewer++) {
+                    var frame=channels.get(viewer).next("PREPARATION_CONFIRMED");
+                    assertEquals(viewer<=actor?json.valueToTree(preparation(viewer)):json.createObjectNode(),frame.at("/data/match/ownBoard"));
+                    assertEquals(viewer<=actor,frame.at("/data/match/ownPreparationConfirmed").asBoolean());
+                    assertTrue(frame.at("/data/match/round").isNull());
+                }
+                if(actor<5) {assertEquals("PREPARING",accepted.body.at("/data/match/state").asText());assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));}
+            }
+            JsonNode common=null;
+            for(int i=0;i<6;i++) {
+                var frame=channels.get(i).next("ROUND_STARTED");var round=frame.at("/data/match/round");
+                if(common==null) common=round;else assertEquals(common,round);
+                assertEquals(json.valueToTree(preparation(i)),frame.at("/data/match/ownBoard"));
+                assertEquals(60,Duration.between(Instant.parse(round.path("startedAt").asText()),Instant.parse(round.path("deadline").asText())).toSeconds());
+                assertEquals(json.valueToTree(preparation(i)),request("GET","/rooms/"+game.room,null,access(game.players.get(i))).body.at("/match/ownBoard"));
+            }
+            assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+            assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM room_events e,json_each(e.data_json,'$.match.ownBoard') cell WHERE e.room_id=?",Integer.class,game.room));
+        } finally {for(var c:channels) c.close();}
+    }
+    @Test void invalidPreparationCannotChangeBoardAndReorderedReplayIsCanonical() throws Exception {
+        var game=game(2);var good=preparation(0);var bad=new LinkedHashMap<>(good);
+        bad.put(bad.keySet().iterator().next(),7);
+        error(roomCommand("PUT","/matches/"+game.match+"/preparation",game.players.getFirst(),Map.of("placements",bad)),400,"INVALID_PREPARATION");
+        error(roomCommand("PUT","/matches/"+game.match+"/preparation",game.players.getFirst(),Map.of("placements",good,"points",999)),400,"VALIDATION_ERROR");
+        var outsider=register();error(roomCommand("PUT","/matches/"+game.match+"/preparation",outsider,Map.of("placements",good)),403,"NOT_ROOM_MEMBER");
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM match_players WHERE match_id=? AND prepared_at IS NOT NULL",Integer.class,game.match));
+        var cid=UUID.randomUUID().toString();var accepted=request("PUT","/matches/"+game.match+"/preparation",Map.of("commandId",cid,"placements",good),access(game.players.getFirst()));
+        var reversed=new LinkedHashMap<String,Integer>();var keys=new ArrayList<>(good.keySet());Collections.reverse(keys);keys.forEach(k->reversed.put(k,good.get(k)));
+        assertEquals(accepted.body,request("PUT","/matches/"+game.match+"/preparation",Map.of("placements",reversed,"commandId",cid),access(game.players.getFirst())).body);
+        error(prepare(game,0),409,"PREPARATION_ALREADY_CONFIRMED");
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void simultaneousPreparationsCreateExactlyOneFirstRound() throws Exception {
+        var game=game(2);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var a=pool.submit(()->prepare(game,0));var b=pool.submit(()->prepare(game,1));assertEquals(200,a.get().status);assertEquals(200,b.get().status);
+        }
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void acceptedPlacementIsFinalPrivateAndIdempotent() throws Exception {
+        var game=game(2);var initial=preparedGame(game);String round=initial.body.at("/data/match/round/id").asText();
+        var dice=initial.body.at("/data/match/round/dice");int first=dice.get(0).asInt(),second=dice.get(1).asInt();
+        var rules=new com.brilliant.server.game.BoardRules(new com.brilliant.server.game.BoardCatalog().board("tablero_01"));
+        int die=rules.destinations(preparation(0),first,second).isEmpty()?1:0;
+        String cell=rules.destinations(preparation(0),die==0?first:second,die==0?second:first).iterator().next();
+        String route="/matches/"+game.match+"/rounds/"+round+"/actions",cid=UUID.randomUUID().toString();
+        var body=Map.of("commandId",cid,"kind","PLACE","dieIndex",die,"cellId",cell);
+        var accepted=request("POST",route,body,access(game.players.getFirst()));assertEquals(200,accepted.status);
+        assertEquals(7,accepted.body.at("/data/match/ownBoard").size());assertEquals("PLACE",accepted.body.at("/data/match/round/ownAction/kind").asText());
+        assertEquals(accepted.body,request("POST",route,body,access(game.players.getFirst())).body);
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("kind","SKIP")),409,"ACTION_ALREADY_RESOLVED");
+        var opponent=request("GET","/rooms/"+game.room,null,access(game.players.get(1)));
+        assertEquals(json.valueToTree(preparation(1)),opponent.body.at("/match/ownBoard"));assertTrue(opponent.body.at("/match/round/ownAction").isNull());
+        assertEquals(200,roomCommand("POST",route,game.players.get(1),Map.of("kind","SKIP")).status);
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("kind","SKIP")),409,"ROUND_EXPIRED");
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM round_actions WHERE round_id=? AND member_id=(SELECT id FROM room_members WHERE user_id=? AND room_id=?)",Integer.class,round,game.players.getFirst().body.at("/user/id").asText(),game.room));
+    }
+    @Test void invalidAndExpiredActionsDoNotCommitLocalProposals() throws Exception {
+        var game=game(2);var initial=preparedGame(game);String round=initial.body.at("/data/match/round/id").asText();String route="/matches/"+game.match+"/rounds/"+round+"/actions";
+        String occupied=preparation(0).keySet().iterator().next();
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("kind","PLACE","dieIndex",0,"cellId",occupied)),400,"INVALID_MOVE");
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("kind","PLACE","dieIndex",2,"cellId",occupied)),400,"INVALID_MOVE");
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM round_actions WHERE round_id=?",Integer.class,round));
+        clock.now=clock.now.plusSeconds(59);healthyActivity();roomService.advanceMatches();
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+        clock.now=clock.now.plusSeconds(1);healthyActivity();roomService.advanceMatches();roomService.advanceMatches();
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("kind","PLACE","dieIndex",0,"cellId",occupied)),409,"ROUND_EXPIRED");
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM round_actions WHERE round_id=? AND kind='SKIP' AND reason='TIMEOUT'",Integer.class,round));
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+        for(int i=0;i<2;i++) assertEquals(json.valueToTree(preparation(i)),request("GET","/rooms/"+game.room,null,access(game.players.get(i))).body.at("/match/ownBoard"));
+    }
+    @Test void lastConfirmationRacingTimeoutAdvancesOnlyOnce() throws Exception {
+        var game=game(2);var initial=preparedGame(game);String round=initial.body.at("/data/match/round/id").asText();String route="/matches/"+game.match+"/rounds/"+round+"/actions";
+        roomCommand("POST",route,game.players.getFirst(),Map.of("kind","SKIP"));
+        clock.now=clock.now.plusSeconds(59);healthyActivity();
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var action=pool.submit(()->roomCommand("POST",route,game.players.get(1),Map.of("kind","SKIP")));
+            var timeout=pool.submit(()->{clock.now=clock.now.plusSeconds(1);roomService.advanceMatches();});
+            int status=action.get().status;timeout.get();assertTrue(Set.of(200,409).contains(status));
+        }
+        roomService.advanceMatches();assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM round_actions WHERE round_id=?",Integer.class,round));
+    }
+    @Test void leavingPreparationStopsWaitingForTheDepartedParticipant() throws Exception {
+        var game=game(3);prepare(game,0);prepare(game,1);
+        var left=roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(2),Map.of());assertEquals(200,left.status);
+        assertEquals("ROUND_ACTIVE",left.body.at("/data/match/state").asText());assertEquals(24,left.body.at("/data/match/target").asInt());
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

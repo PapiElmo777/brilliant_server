@@ -1,8 +1,8 @@
 # Multijugador — contrato v1
 
-Implementación de las entregas 1–3 del plan, actualizada el 6 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. WebSocket, envío de chat e historial están disponibles. Las rutas de juego, votación y revancha siguen pendientes. Cuentas conserva sus rutas existentes.
+Implementación de las entregas 1–4 del plan, actualizada el 6 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. WebSocket, envío de chat e historial están disponibles. Preparación y acciones de ronda están disponibles; votación, premios, final y revancha siguen pendientes. Cuentas conserva sus rutas existentes.
 
-Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos y el historial describen el canal actual. No sustituyen autorización ni validación de dominio. Los campos internos de match se ampliarán con las rondas y resultados.
+Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos y el historial describen el canal actual. No sustituyen autorización ni validación de dominio. El esquema de match incluye preparación privada y rondas; los resultados se ampliarán en entregas posteriores.
 
 ## Transporte y autoridad
 
@@ -60,9 +60,9 @@ Formato existente `{error:{code,...}}`; el cliente decide por code, nunca por te
 
 - 400 VALIDATION_ERROR, INVALID_PREPARATION, INVALID_MOVE, INVALID_DICE.
 - 401 UNAUTHORIZED, ACCESS_TOKEN_EXPIRED, SESSION_INVALID.
-- 403 NOT_ROOM_MEMBER, HOST_ONLY.
+- 403 NOT_ROOM_MEMBER, NOT_MATCH_PARTICIPANT, HOST_ONLY.
 - 404 ROOM_NOT_FOUND, MATCH_NOT_FOUND.
-- 409 CAPACITY_BELOW_OCCUPANCY, LEVEL_REQUIRED, HOST_STARTS_MATCH, ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE.
+- 409 PREPARATION_CLOSED, PREPARATION_ALREADY_CONFIRMED, CAPACITY_BELOW_OCCUPANCY, LEVEL_REQUIRED, HOST_STARTS_MATCH, ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE.
 - 429 RATE_LIMITED con Retry-After.
 
 ## Renovación implementada
@@ -83,9 +83,9 @@ Todas las rutas de sala responden 200 en éxito. GET /rooms enumera los lobbies,
 
 Una vez enlazado el canal, la presencia de sala caduca tras 45 segundos sin latido de ese canal, por separado del heartbeat de cuenta. Consultar GET o cambiar Listo no prolonga una conexión perdida. Antes del primer canal se mantiene temporalmente la presencia HTTP de entrega 2. La renovación conserva el sid y el miembro. Logout/borrado retiran al miembro en la misma transacción de cuenta. La salida cambia anfitrión al conectado de mayor antigüedad y cierra una sala vacía. Los nombres e identidades de participación se conservan para el historial aunque se borre la cuenta. Estas comprobaciones cubren lobby/entrada a preparación; las reglas de victoria por abandono durante la partida corresponden a la entrega 5.
 
-POST /start crea una partida PREPARING, congela nivel, participantes y meta; no crea dados ni inicia el modo local. La interfaz muestra este estado sin permitir cambios de configuración. La preparación individual y las rondas se integran en entrega 4. En la entrega actual no se implementa una política de recuperación o cancelación de partidas en juego tras reiniciar Java.
+POST /start crea una partida PREPARING, congela nivel, participantes y meta; no crea dados ni inicia el modo local. La interfaz muestra este estado sin permitir cambios de configuración. La preparación individual y las rondas están implementadas en entrega 4. En la entrega actual no se implementa una política de recuperación o cancelación de partidas en juego tras reiniciar Java.
 
-Recorrido real: `flutter test test/multiplayer/rooms_api_e2e_test.dart --dart-define=RUN_ROOMS_API_E2E=true`. Requiere JAR compilado y Java 21; ambos se pueden seleccionar con ROOMS_SERVER_JAR y ROOMS_SERVER_JAVA. El recorrido usa siete repositorios Dart independientes, un puerto libre y SQLite/cuentas temporales, y termina su proceso Java. Verifica lobby de seis, séptimo rechazado, aislamiento de otra sala, permisos, seis canales, chat compartido, renovación/reconexión con la misma identidad, mismo identificador de preparación y transferencia de anfitrión; no acredita dados compartidos ni seis teléfonos físicos.
+Recorrido real: `flutter test test/multiplayer/rooms_api_e2e_test.dart --dart-define=RUN_ROOMS_API_E2E=true`. Requiere JAR compilado y Java 21; ambos se pueden seleccionar con ROOMS_SERVER_JAR y ROOMS_SERVER_JAVA. El recorrido usa siete repositorios Dart independientes, un puerto libre y SQLite/cuentas temporales, y termina su proceso Java. Verifica lobby de seis, séptimo rechazado, aislamiento de otra sala, permisos, seis canales, chat compartido, renovación/reconexión con la misma identidad, mismo identificador de preparación y transferencia de anfitrión; también verifica seis preparaciones privadas, dados/plazo comunes, colocación y omisiones, avance único, rechazo de ronda antigua y restauración del tablero al reconectar. No acredita seis teléfonos físicos.
 
 
 ## Canal e historial — entrega 3
@@ -104,6 +104,23 @@ Chat: texto plano de 1–300 puntos de código Unicode, sin controles salvo salt
 
 La instantánea contiene los últimos 20 mensajes; GET /messages?before=N obtiene los 20 anteriores en orden ascendente y devuelve nextBefore. El cliente conserva hasta 200 mensajes en memoria y detiene la carga al alcanzar ese límite. Muestra no leídos del historial cargado, conserva el borrador ante un resultado incierto y lo limpia al confirmar el mismo comando. El panel se cierra con el teclado abierto; logout/caducidad desmontan también el chat. La burbuja comparte la franja de controles del lobby sin superponerse al mapa.
 
-Los eventos actuales contienen estado público; ownBoard sigue vacío. Al integrar partidas, proyectar los tableros por participante antes de enviarlos: no incluir tableros privados de todos en un evento compartido. Votación, premios, finales, revancha y recuperación de partidas en juego tras reinicio permanecen pendientes.
+El outbox conserva estado público con ownBoard vacío; V005 almacena por separado la proyección privada de cada participante en la misma transacción y secuencia. HTTP y WebSocket envían solo el tablero del solicitante. Los eventos atrasados usan su proyección histórica, sin mezclar un tablero futuro con dados anteriores. Votación, premios, finales, revancha y recuperación de partidas en juego tras reinicio permanecen pendientes.
 
 Referencias de implementación: [WebSocket en Spring Framework 6.2](https://docs.spring.io/spring-framework/reference/6.2/web/websocket/server.html), [WebSocket.connect de Dart](https://api.dart.dev/dart-io/WebSocket/connect.html) y [límites de Tomcat 10.1](https://tomcat.apache.org/tomcat-10.1-doc/web-socket-howto.html). No se actualizaron Spring Boot ni las versiones de reglas por esta entrega.
+
+
+## Preparación y rondas — entrega 4
+
+PUT /matches/{id}/preparation confirma exactamente seis posiciones iniciales con los números 1–6 sin repetir. Java valida casillas y restricciones del mapa congelado; la confirmación es definitiva. Se publica PREPARATION_CONFIRMED sin revelar posiciones ajenas. La primera ronda empieza únicamente cuando todos los participantes activos confirman; no se añade un plazo a la preparación.
+
+Cada ROUND_STARTED contiene id, number, dice, startedAt, deadline, resolvedMemberIds y ownAction. Java genera los dos dados una sola vez y calcula ambos instantes desde el mismo reloj: deadline = startedAt + 60 segundos. match incluye preparedMemberIds, ownPreparationConfirmed y ownBoard (objeto celda→entero). El reloj Flutter parte de serverTime y avanza con tiempo monotónico; al llegar a cero bloquea nuevos envíos, mientras Java decide el vencimiento definitivo.
+
+PLACE exige dieIndex 0/1 y cellId: el otro dado es el ancla. SKIP no acepta esos campos. Java comprueba pertenencia, ronda vigente, plazo, destino, adyacencia y restricciones. Una acción aceptada es inmutable. Toda propuesta visual permanece local hasta confirmar; timeout la descarta y registra SKIP con reason TIMEOUT. ownAction contiene kind, dieIndex, cellId y reason PLAYER/TIMEOUT, o null si está pendiente. Los campos dieIndex/cellId son null en SKIP.
+
+La transacción serializada y los índices únicos resuelven la carrera entre última acción y vencimiento: una sola acción por participante/ronda y una sola ronda siguiente. Todos los activos deben resolver antes del avance anticipado. El temporizador del servidor revisa vencimientos cada 250 ms y también antes de comandos. Los recibos conservan su instantánea privada original; el orden de las propiedades de placements no cambia la identidad canónica del comando.
+
+V005 agrega match_players, match_rounds, round_actions y room_event_views; preserva los checksums V001–V004 y rellena los participantes de partidas PREPARING anteriores. La reconexión recupera tablero confirmado, preparación, dados, plazo y acción de la misma partida. Una respuesta tardía no restaura una pertenencia perdida. La política de recuperación tras reiniciar Java sigue pendiente.
+
+Flutter reutiliza los cuatro mapas, permite acomodo manual, intercambio y ayuda aleatoria, muestra una propuesta resaltada y ofrece Confirmar jugada/Omitir ronda. El tablero completo, el reloj y el chat son accesibles en 320×568, 390×844 y 844×390, con pruebas de texto 2×. La animación visual usa únicamente los dados recibidos.
+
+Esta entrega no adjudica premios globales, puntos, victoria por meta/abandono ni votación por bloqueo. Eso corresponde a entrega 5; ranking, animaciones finales y revancha siguen pendientes. Verificación: 59 pruebas Java, pruebas Flutter de preparación/acciones/reintentos/reloj y recorrido real de seis canales contra el JAR con datos temporales. Los timeouts y las carreras se verifican con reloj controlado en Java.

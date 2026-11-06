@@ -23,10 +23,11 @@ public class RoomService {
     private final Clock clock;
     private final ObjectMapper json;
     private final RateLimits limits;
+    private final MatchEngine matches;
     private final SecureRandom random = new SecureRandom();
     private final BoardCatalog catalog = new BoardCatalog();
-    public RoomService(JdbcTemplate db, TransactionTemplate tx, Accounts accounts, Clock clock, ObjectMapper json, RateLimits limits) {
-        this.db = db; this.tx = tx; this.accounts = accounts; this.clock = clock; this.json = json; this.limits = limits;
+    public RoomService(JdbcTemplate db, TransactionTemplate tx, Accounts accounts, Clock clock, ObjectMapper json, RateLimits limits, MatchEngine matches) {
+        this.db = db; this.tx = tx; this.accounts = accounts; this.clock = clock; this.json = json; this.limits = limits; this.matches=matches;
     }
     private String now() { return clock.instant().toString(); }
     private static void fail(int status, String code) { throw new ApiException(status, code); }
@@ -65,12 +66,17 @@ public class RoomService {
     private String fingerprint(String operation, String resource, JsonNode body) {
         var sorted = new TreeMap<String,JsonNode>();
         body.fields().forEachRemaining(e -> { if (!e.getKey().equals("commandId")) sorted.put(e.getKey(),e.getValue()); });
-        return AuthService.sha256(operation + "\n" + resource + "\n" + encode(sorted));
+        return AuthService.sha256(operation + "\n" + resource + "\n" + encode(canonical(json.valueToTree(sorted))));
+    }
+    private Object canonical(JsonNode value) {
+        if(value.isObject()) {var fields=new TreeMap<String,Object>();value.fields().forEachRemaining(e->fields.put(e.getKey(),canonical(e.getValue())));return fields;}
+        if(value.isArray()) {var items=new ArrayList<Object>();value.forEach(item->items.add(canonical(item)));return items;}
+        return value;
     }
     /** BEGIN IMMEDIATE serializes the last slot, start/join and replay receipt atomically. */
     private Map<String,Object> command(String user, String sid, String commandId, String operation, String resource, JsonNode body, Supplier<String> effect) {
         uuid(commandId);
-        expireMembers();
+        advanceMatches();
         return Database.write(tx, () -> {
             accounts.requireActive(user,sid);
             String fingerprint = fingerprint(operation,resource,body);
@@ -80,7 +86,7 @@ public class RoomService {
                 return decode((String)prior.getFirst().get("response_json"));
             }
             String id = effect.get();
-            var snapshot = snapshot(id);
+            var snapshot = snapshotFor(id,user);
             var response = Map.<String,Object>of("commandId",commandId,"roomId",id,"sequence",snapshot.get("sequence"),"data",snapshot);
             db.update("INSERT INTO room_commands VALUES(?,?,?,?)",user,commandId,fingerprint,encode(response));
             return response;
@@ -112,7 +118,7 @@ public class RoomService {
             var member = member(id,user);
             if (!sid.equals(member.get("session_id"))) fail(403,"NOT_ROOM_MEMBER");
             db.update("UPDATE room_members SET last_seen_at=? WHERE id=? AND channel_id IS NULL",now(),member.get("id"));
-            return snapshot(id);
+            return snapshotFor(id,user);
         });
     }
     public Map<String,Object> create(String user, String sid, String cid, JsonNode body, String name, Integer capacity) {
@@ -176,6 +182,7 @@ public class RoomService {
             String matchId = UUID.randomUUID().toString();
             db.update("INSERT INTO room_matches VALUES(?,?,?,?,?,?,?,?)",matchId,id,room.get("level_id"),1,Scoring.target(active.size()),"PREPARING",encode(publicMembers(active)),now());
             db.update("UPDATE rooms SET state='PREPARING' WHERE id=?",id);
+            matches.initialize(matchId,id);
             event(id,"MATCH_STARTED"); return id;
         });
     }
@@ -200,6 +207,9 @@ public class RoomService {
             event(id,"HOST_CHANGED",next.get("username")+" es el nuevo anfitrión.");
         }
         event(id,"MEMBER_LEFT",member.get("username")+" salió de la sala.");
+        for(var match:db.queryForList("SELECT id FROM room_matches WHERE room_id=? AND state IN ('PREPARING','ROUND_ACTIVE')",id)) {
+            if(!remaining.isEmpty()) matches.advance((String)match.get("id"),(type,text)->event(id,type,text));
+        }
     }
     private boolean alive(Map<String,Object> member) {
         return member.get("user_id") != null && accounts.active((String)member.get("user_id"),(String)member.get("session_id"),false)
@@ -236,13 +246,51 @@ public class RoomService {
         result.put("serverTime",now()); result.put("room",room); result.put("messages",historyRows(id,Long.MAX_VALUE,20)); result.put("match",null);
         var matches = db.queryForList("SELECT * FROM room_matches WHERE room_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1",id);
         if (!matches.isEmpty()) {
-            var m = matches.getFirst(); var match = new LinkedHashMap<String,Object>();
-            match.put("id",m.get("id")); match.put("state",m.get("state")); match.put("levelId",m.get("level_id")); match.put("target",m.get("target"));
-            try { match.put("participants",json.readTree((String)m.get("participants_json"))); }
-            catch(Exception e) { throw new IllegalStateException(e); }
-            match.put("ownBoard",Map.of()); match.put("round",null); match.put("result",null); result.put("match",match);
+            result.put("match",this.matches.publicView(matches.getFirst()));
         }
         return result;
+    }
+    @SuppressWarnings("unchecked")
+    private Map<String,Object> overlay(Map<String,Object> snapshot,Map<String,Object> privateData) {
+        var match=(Map<String,Object>)snapshot.get("match");
+        if(match!=null) {
+            match.put("ownBoard",privateData.getOrDefault("ownBoard",Map.of()));
+            match.put("ownPreparationConfirmed",privateData.getOrDefault("ownPreparationConfirmed",false));
+            if(match.get("round") instanceof Map<?,?> round) ((Map<String,Object>)round).put("ownAction",privateData.get("ownAction"));
+        }
+        return snapshot;
+    }
+    private Map<String,Object> snapshotFor(String id,String user) {
+        var snapshot=snapshot(id);var match=(Map<?,?>)snapshot.get("match");
+        if(match==null) return snapshot;
+        var own=db.queryForList("SELECT id FROM room_members WHERE room_id=? AND user_id=? ORDER BY join_order DESC LIMIT 1",id,user);
+        return own.isEmpty()?snapshot:overlay(snapshot,matches.privateView((String)match.get("id"),(String)own.getFirst().get("id")));
+    }
+    private Map<String,Object> eventView(String id,long sequence,String user,Map<String,Object> snapshot) {
+        var views=db.queryForList("SELECT v.private_json FROM room_event_views v JOIN room_members m ON m.id=v.member_id WHERE v.room_id=? AND v.sequence=? AND m.user_id=?",id,sequence,user);
+        return views.isEmpty()?snapshot:overlay(snapshot,decode((String)views.getFirst().get("private_json")));
+    }
+    public Map<String,Object> prepare(String matchId,String user,String sid,String cid,JsonNode body,Map<String,Integer> placements) {
+        String id=(String)matches.match(matchId).get("room_id");
+        return command(user,sid,cid,"prepare",matchId,body,()->{
+            var own=member(id,user);matches.prepare(matchId,(String)own.get("id"),placements,(type,text)->event(id,type,text));return id;
+        });
+    }
+    public Map<String,Object> action(String matchId,String roundId,String user,String sid,String cid,JsonNode body,String kind,Integer die,String cell) {
+        String id=(String)matches.match(matchId).get("room_id");
+        return command(user,sid,cid,"action",matchId+"/"+roundId,body,()->{
+            var own=member(id,user);matches.action(matchId,roundId,(String)own.get("id"),kind,die,cell,(type,text)->event(id,type,text));return id;
+        });
+    }
+    @Scheduled(initialDelay=250,fixedDelay=250)
+    public void advanceMatches() {
+        expireMembers();
+        Database.write(tx,()->{
+            for(var row:db.queryForList("SELECT p.id,p.room_id FROM room_matches p JOIN rooms r ON r.id=p.room_id WHERE r.state<>'CLOSED' AND p.state IN ('PREPARING','ROUND_ACTIVE')")) {
+                String id=(String)row.get("room_id");matches.advance((String)row.get("id"),(type,text)->event(id,type,text));
+            }
+            return null;
+        });
     }
     private void insertMessage(String id, String kind, String author, String name, String text) {
         long sequence = db.queryForObject("SELECT sequence+1 FROM rooms WHERE id=?",Long.class,id);
@@ -293,7 +341,7 @@ public class RoomService {
             boolean reconnecting = m.get("channel_id") != null && !connected(m);
             db.update("UPDATE room_members SET channel_id=?,channel_connected=1,last_seen_at=? WHERE id=?",channelId,now(),m.get("id"));
             if (reconnecting) event(id,"MEMBER_CONNECTION_CHANGED");
-            return snapshot(id);
+            return snapshotFor(id,user);
         });
     }
     public void disconnectChannel(String id,String user,String channelId) {
@@ -321,7 +369,7 @@ public class RoomService {
             requireChannel(id,user,sid,channelId);
             var result = new ArrayList<Map<String,Object>>();
             for (var row : db.queryForList("SELECT * FROM room_events WHERE room_id=? AND sequence>? ORDER BY sequence LIMIT 32",id,after)) {
-                result.add(Map.of("protocolVersion",1,"roomId",id,"sequence",row.get("sequence"),"type",row.get("type"),"serverTime",row.get("server_time"),"data",decode((String)row.get("data_json"))));
+                result.add(Map.of("protocolVersion",1,"roomId",id,"sequence",row.get("sequence"),"type",row.get("type"),"serverTime",row.get("server_time"),"data",eventView(id,((Number)row.get("sequence")).longValue(),user,decode((String)row.get("data_json")))));
             }
             return result;
         });
@@ -339,5 +387,12 @@ public class RoomService {
         db.update("UPDATE rooms SET sequence=sequence+1 WHERE id=?",id);
         var snapshot = snapshot(id);
         db.update("INSERT INTO room_events VALUES(?,?,?,?,?)",id,snapshot.get("sequence"),type,now(),encode(snapshot));
+        var match=(Map<?,?>)snapshot.get("match");
+        if(match!=null) {
+            for(var player:db.queryForList("SELECT member_id FROM match_players WHERE match_id=?",match.get("id"))) {
+                String member=(String)player.get("member_id");
+                db.update("INSERT INTO room_event_views VALUES(?,?,?,?)",id,snapshot.get("sequence"),member,encode(matches.privateView((String)match.get("id"),member)));
+            }
+        }
     }
 }
