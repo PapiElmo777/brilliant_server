@@ -50,8 +50,8 @@ public class Database {
                 jdbc.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL)");
                 try {
                     var versions = jdbc.queryForList("SELECT version FROM schema_migrations", Integer.class);
-                    if (versions.stream().anyMatch(v -> v != 1 && v != 2 && v != 3 && v != 4 && v != 5)) throw new IllegalStateException("Versión de base no soportada");
-                    for (var migration : java.util.Map.of(1,"V001__accounts.sql",2,"V002__single_session.sql",3,"V003__rooms.sql",4,"V004__room_channels_and_chat.sql",5,"V005__match_rounds.sql").entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).toList()) {
+                    if (versions.stream().anyMatch(v -> v != 1 && v != 2 && v != 3 && v != 4 && v != 5 && v != 6)) throw new IllegalStateException("Versión de base no soportada");
+                    for (var migration : java.util.Map.of(1,"V001__accounts.sql",2,"V002__single_session.sql",3,"V003__rooms.sql",4,"V004__room_channels_and_chat.sql",5,"V005__match_rounds.sql",6,"V006__match_scoring.sql").entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).toList()) {
                         String sql = new ClassPathResource("db/migration/"+migration.getValue()).getContentAsString(StandardCharsets.UTF_8);
                         String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(sql.getBytes(StandardCharsets.UTF_8)));
                         if (!versions.contains(migration.getKey())) {

@@ -195,7 +195,8 @@ public class RoomService {
     public void leaveAccount(String user) {
         for (var m : db.queryForList("SELECT * FROM room_members WHERE user_id=? AND left_at IS NULL",user)) remove(m);
     }
-    private void remove(Map<String,Object> member) {
+    private void remove(Map<String,Object> member) { remove(member,true); }
+    private void remove(Map<String,Object> member,boolean advance) {
         String id = (String)member.get("room_id");
         if (db.update("UPDATE room_members SET left_at=?,ready=0 WHERE id=? AND left_at IS NULL",now(),member.get("id")) == 0) return;
         var room = room(id); var remaining = members(id);
@@ -207,9 +208,10 @@ public class RoomService {
             event(id,"HOST_CHANGED",next.get("username")+" es el nuevo anfitrión.");
         }
         event(id,"MEMBER_LEFT",member.get("username")+" salió de la sala.");
-        for(var match:db.queryForList("SELECT id FROM room_matches WHERE room_id=? AND state IN ('PREPARING','ROUND_ACTIVE')",id)) {
-            if(!remaining.isEmpty()) matches.advance((String)match.get("id"),(type,text)->event(id,type,text));
-        }
+        if(advance) advanceRoom(id);
+    }
+    private void advanceRoom(String id) {
+        for(var match:db.queryForList("SELECT id FROM room_matches WHERE room_id=? AND state IN ('PREPARING','ROUND_ACTIVE','END_VOTE')",id)) matches.advance((String)match.get("id"),(type,text)->event(id,type,text));
     }
     private boolean alive(Map<String,Object> member) {
         return member.get("user_id") != null && accounts.active((String)member.get("user_id"),(String)member.get("session_id"),false)
@@ -221,9 +223,11 @@ public class RoomService {
     @Scheduled(initialDelay=5000,fixedDelay=5000)
     public void expireMembers() {
         Database.write(tx, () -> {
+            var affected=new LinkedHashSet<String>();
             for (var member : db.queryForList("SELECT * FROM room_members WHERE left_at IS NULL ORDER BY room_id,join_order")) {
-                if (!alive(member)) remove(member);
+                if (!alive(member)) {remove(member,false);affected.add((String)member.get("room_id"));}
             }
+            affected.forEach(this::advanceRoom);
             return null;
         });
     }
@@ -282,11 +286,22 @@ public class RoomService {
             var own=member(id,user);matches.action(matchId,roundId,(String)own.get("id"),kind,die,cell,(type,text)->event(id,type,text));return id;
         });
     }
+    public Map<String,Object> vote(String matchId,String user,String sid) {
+        advanceMatches();return Database.write(tx,()->{
+            accounts.requireActive(user,sid);String id=(String)matches.match(matchId).get("room_id");member(id,user);var response=new LinkedHashMap<String,Object>();response.put("endVote",matches.voteView(matchId));return response;
+        });
+    }
+    public Map<String,Object> ballot(String matchId,String user,String sid,String cid,JsonNode body,String voteId,boolean approve) {
+        String id=(String)matches.match(matchId).get("room_id");
+        return command(user,sid,cid,"ballot",matchId+"/"+voteId,body,()->{
+            var own=member(id,user);matches.ballot(matchId,voteId,(String)own.get("id"),approve,(type,text)->event(id,type,text));return id;
+        });
+    }
     @Scheduled(initialDelay=250,fixedDelay=250)
     public void advanceMatches() {
         expireMembers();
         Database.write(tx,()->{
-            for(var row:db.queryForList("SELECT p.id,p.room_id FROM room_matches p JOIN rooms r ON r.id=p.room_id WHERE r.state<>'CLOSED' AND p.state IN ('PREPARING','ROUND_ACTIVE')")) {
+            for(var row:db.queryForList("SELECT p.id,p.room_id FROM room_matches p JOIN rooms r ON r.id=p.room_id WHERE r.state<>'CLOSED' AND p.state IN ('PREPARING','ROUND_ACTIVE','END_VOTE')")) {
                 String id=(String)row.get("room_id");matches.advance((String)row.get("id"),(type,text)->event(id,type,text));
             }
             return null;

@@ -1,6 +1,6 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; preparación individual y rondas comunes de 60 segundos están implementadas; premios globales y final siguen pendientes.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; preparación, rondas de 60 segundos, premios globales, votación y resultado están implementados; animaciones finales y revancha siguen pendientes.
 
 ## Arranque en la red local
 
@@ -115,3 +115,18 @@ V005 conserva V001–V004, migra participantes PREPARING y persiste tableros, ro
 Verificación: 412 pruebas Flutter, análisis sin avisos, 59 pruebas Java y recorrido adicional de siete clientes/seis canales contra el JAR temporal: seis preparaciones diferentes, privacidad, dados/plazo iguales, colocación, omisiones, ronda siguiente, rechazo de ronda antigua y reconexión. Java verifica además timeout a los 60 segundos, carreras y migración V004→V005. Seis capturas nuevas revisadas en tres tamaños; controles probados con texto 2×. JAR y APK Debug generados.
 
 Todo permanece en `multiplayer`, con commits en español y sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales; respaldar SQLite con el proceso detenido antes de aplicar V005. La siguiente entrega es la 5: reclamos/premios transaccionales, continuidad, victoria y votación. No se han añadido puntos globales, final, ranking ni revancha en esta fase. Se mantienen pendientes las decisiones explícitas del plan local.
+
+
+## Entrega 5 — premios, continuidad y votación (8 de noviembre de 2026)
+
+Implementadas las entregas 1–5 en `multiplayer`. Reclamos y puestos globales únicos, cuarto–sexto +0, marcador propio/rivales, aviso de sistema y actualización de premios disponibles. Colocación, puntos y eventos son transaccionales e idempotentes. Alcanzar la meta fija un único ganador y resultado inmutable; no se aceptan más acciones ni se abre otra ronda.
+
+Confirmaciones del usuario de esta entrega: pausar rondas durante votación; si no se aprueba, continuar y esperar otras tres rondas bloqueadas; retirar el voto de quien abandona y recalcular mayoría. Ranking con abandonos después de activos y orden de ingreso para empates absolutos, tras puntos/zonas/secuencia positiva. Ganador primero. Estas reglas reemplazan las propuestas anteriores.
+
+Tres rondas sin movimientos legales para nadie abren una votación de 60 segundos; omitir con movimientos disponibles rompe la racha. Mayoría absoluta de activos, un voto definitivo por participante, cierre anticipado si se aprueba o resulta imposible aprobar y continuación al expirar sin mayoría. Reconectar y transferir anfitrión conserva la votación. Con un restante prevalece victoria por abandono, manteniendo meta y reclamos; un lote de expiraciones simultáneas no inventa un ganador por el orden de eliminación.
+
+V006 preserva los checksums V001–V005, tableros, rondas y acciones. Agrega progreso, reclamos, votaciones y votos. Resultado con ganador, motivo, posiciones, nombres y puntos congelados; el borrado de cuentas o salidas posteriores no lo reordenan. La UI muestra un resumen del resultado; animaciones de victoria/derrota y revancha corresponden a entrega 6. La política de reinicio de Java y el anfitrión de revancha siguen pendientes.
+
+Verificación: 427 pruebas Flutter, análisis sin avisos y 75 pruebas Java. Incluye reclamos concurrentes de seis, premios +0, reversión completa ante fallo, resultado fijo, mayorías 2–6, voto idempotente, plazo/racha, abandonos, reconexión real y migración V005→V006. Recorrido adicional de siete clientes Dart/seis canales contra el JAR con datos temporales: colocaciones legales hasta completar zonas reales, premios comunes, tableros privados, conservación de reclamos y victoria del último participante. No es una prueba de seis teléfonos. Nueve capturas nuevas/actualizadas de marcador, votación y resultado en tres tamaños; pruebas con texto 2× y chat accesible. JAR y APK Debug generados.
+
+Trabajo en `multiplayer`, commits en español y sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales. Respaldar SQLite con el proceso detenido antes de arrancar el JAR nuevo: aplica V006 y no se debe volver a un JAR anterior. Siguiente entrega: animaciones finales, presentación de resultados y revancha (fase 6).

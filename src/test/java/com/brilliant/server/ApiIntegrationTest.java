@@ -520,6 +520,231 @@ class ApiIntegrationTest {
         assertEquals("ROUND_ACTIVE",left.body.at("/data/match/state").asText());assertEquals(24,left.body.at("/data/match/target").asInt());
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
     }
+    String memberId(GameSetup game,int i) {
+        return db.queryForObject("SELECT id FROM room_members WHERE room_id=? AND user_id=?",String.class,game.room,game.players.get(i).body.at("/user/id").asText());
+    }
+    void greenAlmostComplete(GameSetup game) throws Exception {
+        var board=new LinkedHashMap<>(preparation(0));
+        for(String cell:List.of("f2_c1","f2_c2","f3_c1","f4_c1")) board.put(cell,1);
+        db.update("UPDATE match_players SET board_json=? WHERE match_id=?",json.writeValueAsString(board),game.match);
+        db.update("UPDATE match_rounds SET first_die=1,second_die=1 WHERE match_id=? AND closed_at IS NULL",game.match);
+    }
+    String actionRoute(GameSetup game) {
+        return "/matches/"+game.match+"/rounds/"+db.queryForObject("SELECT id FROM match_rounds WHERE match_id=? AND closed_at IS NULL",String.class,game.match)+"/actions";
+    }
+    void blockedBoards(GameSetup game) throws Exception {
+        var board=new LinkedHashMap<String,Integer>();
+        for(var zone:new com.brilliant.server.game.BoardCatalog().board("tablero_01").zones()) {
+            int i=0;for(var cell:zone.cells()) board.put(cell.id(),switch(zone.rule()) {case RED,YELLOW->++i;default->1;});
+        }
+        new com.brilliant.server.game.BoardRules(new com.brilliant.server.game.BoardCatalog().board("tablero_01")).validate(board);
+        db.update("UPDATE match_players SET board_json=? WHERE match_id=?",json.writeValueAsString(board),game.match);
+    }
+    Reply skipAll(GameSetup game) throws Exception {
+        String route=actionRoute(game);Reply last=null;
+        for(var player:game.players) {last=roomCommand("POST",route,player,Map.of("kind","SKIP"));assertEquals(200,last.status);}
+        return last;
+    }
+    JsonNode openBlockedVote(GameSetup game) throws Exception {
+        preparedGame(game);blockedBoards(game);
+        for(int i=0;i<3;i++) skipAll(game);
+        var snapshot=request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body;
+        assertEquals("END_VOTE",snapshot.at("/match/state").asText());return snapshot.at("/match/endVote");
+    }
+    Reply ballot(GameSetup game,int player,String vote,boolean approve) throws Exception {
+        return roomCommand("PUT","/matches/"+game.match+"/end-vote/ballot",game.players.get(player),Map.of("voteId",vote,"approve",approve));
+    }
+    @Test void sixConcurrentClaimsReceiveUniquePrizesAndReplaysCannotScoreTwice() throws Exception {
+        var game=game(6);preparedGame(game);greenAlmostComplete(game);String route=actionRoute(game);
+        var bodies=new ArrayList<Map<String,Object>>();var replies=new ArrayList<Reply>();
+        for(int i=0;i<6;i++) bodies.add(Map.of("commandId",UUID.randomUUID().toString(),"kind","PLACE","dieIndex",0,"cellId","f5_c1"));
+        try(var pool=Executors.newFixedThreadPool(6)) {
+            var tasks=new ArrayList<Future<Reply>>();
+            for(int i=0;i<6;i++) {int actor=i;tasks.add(pool.submit(()->request("POST",route,bodies.get(actor),access(game.players.get(actor)))));}
+            for(var task:tasks) {var accepted=task.get();assertEquals(200,accepted.status);replies.add(accepted);}
+        }
+        assertEquals(List.of(4,3,2,0,0,0),db.queryForList("SELECT points FROM zone_claims WHERE match_id=? ORDER BY place",Integer.class,game.match));
+        assertEquals(6,db.queryForObject("SELECT COUNT(DISTINCT member_id) FROM zone_claims WHERE match_id=?",Integer.class,game.match));
+        assertEquals(6,db.queryForObject("SELECT COUNT(*) FROM room_messages WHERE room_id=? AND text LIKE '%completó verde_1%'",Integer.class,game.room));
+        for(int i=0;i<6;i++) assertEquals(replies.get(i).body,request("POST",route,bodies.get(i),access(game.players.get(i))).body);
+        var snapshot=request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body;
+        assertEquals(9,snapshot.at("/match/scores").findValues("points").stream().mapToInt(JsonNode::asInt).sum());
+        assertEquals(7,snapshot.at("/match/zones/1/nextPlace").asInt());assertEquals(0,snapshot.at("/match/zones/1/nextPoints").asInt());
+        assertEquals(2,snapshot.at("/match/round/number").asInt());
+        assertEquals(200,roomCommand("POST","/rooms/"+game.room+"/leave",game.players.getFirst(),Map.of()).status);
+        assertEquals(6,db.queryForObject("SELECT COUNT(*) FROM zone_claims WHERE match_id=?",Integer.class,game.match));
+        assertEquals(20,request("GET","/rooms/"+game.room,null,access(game.players.get(1))).body.at("/match/target").asInt());
+    }
+    @Test void reachingTargetFreezesOneWinnerAndRejectsLaterActions() throws Exception {
+        var game=game(6);preparedGame(game);greenAlmostComplete(game);String actor=memberId(game,0),route=actionRoute(game);
+        // A trusted persisted score immediately before a winning green-zone placement.
+        db.update("INSERT INTO zone_claims VALUES(?, 'azul_1',?,1,7,1)",game.match,actor);
+        db.update("INSERT INTO zone_claims VALUES(?, 'morado_1',?,1,6,2)",game.match,actor);
+        db.update("INSERT INTO zone_claims VALUES(?, 'rojo_1',?,1,6,3)",game.match,actor);
+        var accepted=roomCommand("POST",route,game.players.getFirst(),Map.of("kind","PLACE","dieIndex",0,"cellId","f5_c1"));assertEquals(200,accepted.status);
+        var result=accepted.body.at("/data/match/result");assertEquals(actor,result.path("winnerMemberId").asText());assertEquals("TARGET",result.path("reason").asText());
+        assertEquals(23,result.at("/ranking/0/points").asInt());assertEquals("FINISHED",accepted.body.at("/data/match/state").asText());
+        error(roomCommand("POST",route,game.players.get(1),Map.of("kind","PLACE","dieIndex",0,"cellId","f5_c1")),409,"MATCH_FINISHED");
+        roomCommand("POST","/rooms/"+game.room+"/leave",game.players.getFirst(),Map.of());
+        assertEquals(result,request("GET","/rooms/"+game.room,null,access(game.players.get(1))).body.at("/match/result"));
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_events WHERE room_id=? AND type='MATCH_FINISHED'",Integer.class,game.room));
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void votingRequiresAbsoluteMajorityForEverySupportedPlayerCount() throws Exception {
+        for(int n=2;n<=6;n++) {
+            var game=game(n);var vote=openBlockedVote(game);int required=n/2+1;
+            assertEquals(required,vote.path("required").asInt());
+            assertEquals(60,Duration.between(Instant.parse(vote.path("startedAt").asText()),Instant.parse(vote.path("deadline").asText())).toSeconds());
+            assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+            error(roomCommand("POST","/matches/"+game.match+"/rounds/old/actions",game.players.getFirst(),Map.of("kind","SKIP")),409,"VOTE_ACTIVE");
+            for(int i=0;i<required;i++) {
+                var reply=ballot(game,i,vote.path("id").asText(),true);assertEquals(200,reply.status);
+                assertEquals(i==required-1?"FINISHED":"END_VOTE",reply.body.at("/data/match/state").asText());
+                if(i==required-1) {assertEquals(memberId(game,0),reply.body.at("/data/match/result/winnerMemberId").asText());assertEquals("END_VOTE",reply.body.at("/data/match/result/reason").asText());}
+            }
+        }
+    }
+    @Test void voteTimeoutResumesAndRequiresThreeMoreBlockedRounds() throws Exception {
+        var game=game(3);var vote=openBlockedVote(game);ballot(game,0,vote.path("id").asText(),true);
+        clock.now=clock.now.plusSeconds(59);healthyActivity();roomService.advanceMatches();
+        assertEquals("END_VOTE",db.queryForObject("SELECT state FROM room_matches WHERE id=?",String.class,game.match));
+        clock.now=clock.now.plusSeconds(1);healthyActivity();roomService.advanceMatches();roomService.advanceMatches();
+        assertEquals("ROUND_ACTIVE",db.queryForObject("SELECT state FROM room_matches WHERE id=?",String.class,game.match));
+        assertEquals("EXPIRED",db.queryForObject("SELECT outcome FROM end_votes WHERE id=?",String.class,vote.path("id").asText()));
+        assertEquals(4,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+        error(ballot(game,1,vote.path("id").asText(),true),409,"VOTE_NOT_ACTIVE");
+        for(int i=0;i<2;i++) assertEquals("ROUND_ACTIVE",skipAll(game).body.at("/data/match/state").asText());
+        assertEquals("END_VOTE",skipAll(game).body.at("/data/match/state").asText());
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM end_votes WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void availableMovesBreakBlockedStreakEvenWhenEveryoneSkipsOrTimesOut() throws Exception {
+        var game=game(2);preparedGame(game);db.update("UPDATE match_progress SET blocked_rounds=2 WHERE match_id=?",game.match);
+        db.update("UPDATE match_rounds SET first_die=1,second_die=1 WHERE match_id=?",game.match);
+        skipAll(game);assertEquals(0,db.queryForObject("SELECT blocked_rounds FROM match_progress WHERE match_id=?",Integer.class,game.match));
+        db.update("UPDATE match_progress SET blocked_rounds=2 WHERE match_id=?",game.match);
+        db.update("UPDATE match_rounds SET first_die=1,second_die=1 WHERE match_id=? AND closed_at IS NULL",game.match);
+        clock.now=clock.now.plusSeconds(60);healthyActivity();roomService.advanceMatches();
+        assertEquals(0,db.queryForObject("SELECT blocked_rounds FROM match_progress WHERE match_id=?",Integer.class,game.match));
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM end_votes WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void ballotIsImmutableIdempotentAndUnauthorizedVotesHaveNoEffect() throws Exception {
+        var game=game(3);var vote=openBlockedVote(game);String route="/matches/"+game.match+"/end-vote/ballot";
+        var body=Map.of("commandId",UUID.randomUUID().toString(),"voteId",vote.path("id").asText(),"approve",true);
+        var first=request("PUT",route,body,access(game.players.getFirst()));assertEquals(200,first.status);
+        assertEquals(first.body,request("PUT",route,body,access(game.players.getFirst())).body);
+        error(ballot(game,0,vote.path("id").asText(),false),409,"BALLOT_ALREADY_CAST");
+        var outsider=register();error(request("PUT",route,body,access(outsider)),403,"NOT_ROOM_MEMBER");
+        error(roomCommand("PUT",route,game.players.get(1),Map.of("voteId",vote.path("id").asText(),"approve",true,"points",999)),400,"VALIDATION_ERROR");
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM end_ballots WHERE vote_id=?",Integer.class,vote.path("id").asText()));
+        assertEquals(vote.path("id"),request("GET","/matches/"+game.match+"/end-vote",null,access(game.players.getFirst())).body.at("/endVote/id"));
+    }
+    @Test void departuresWithdrawVotesRecalculateMajorityAndPreserveFrozenTarget() throws Exception {
+        var game=game(4);var vote=openBlockedVote(game);String id=vote.path("id").asText();ballot(game,0,id,true);ballot(game,1,id,true);
+        var left=roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(0),Map.of());assertEquals(200,left.status);
+        assertEquals("END_VOTE",left.body.at("/data/match/state").asText());assertEquals(2,left.body.at("/data/match/endVote/required").asInt());
+        assertEquals(1,left.body.at("/data/match/endVote/ballots").size());
+        assertEquals(memberId(game,1),left.body.at("/data/room/hostMemberId").asText());
+        var approved=ballot(game,2,id,true);assertEquals("FINISHED",approved.body.at("/data/match/state").asText());
+        assertEquals(22,approved.body.at("/data/match/target").asInt());
+        assertEquals(memberId(game,1),approved.body.at("/data/match/result/winnerMemberId").asText());
+        assertEquals(memberId(game,0),approved.body.at("/data/match/result/ranking/3/memberId").asText());
+    }
+    @Test void impossibleMajorityRejectsVoteAndContinuesWithoutWaitingForTimeout() throws Exception {
+        var game=game(2);var vote=openBlockedVote(game);
+        var rejected=ballot(game,0,vote.path("id").asText(),false);assertEquals("ROUND_ACTIVE",rejected.body.at("/data/match/state").asText());
+        assertEquals("REJECTED",rejected.body.at("/data/match/endVote/outcome").asText());
+        assertEquals(0,rejected.body.at("/data/match/blockedRounds").asInt());
+    }
+    @Test void lastRemainingPlayerWinsInPreparationOrVoteRegardlessOfWhoLeaves() throws Exception {
+        for(boolean hostLeaves:List.of(true,false)) {
+            var game=game(2);int leaver=hostLeaves?0:1;
+            var left=roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(leaver),Map.of());
+            assertEquals("FINISHED",left.body.at("/data/match/state").asText());
+            assertEquals(memberId(game,1-leaver),left.body.at("/data/match/result/winnerMemberId").asText());
+            assertEquals("ABANDONMENT",left.body.at("/data/match/result/reason").asText());
+            assertEquals(26,left.body.at("/data/match/target").asInt());
+        }
+        var voting=game(2);openBlockedVote(voting);
+        var winner=roomCommand("POST","/rooms/"+voting.room+"/leave",voting.players.getFirst(),Map.of());
+        assertEquals("ABANDONMENT",winner.body.at("/data/match/result/reason").asText());
+    }
+    @Test void simultaneousPresenceExpiryDoesNotAwardLastInDatabaseAnAccidentalVictory() throws Exception {
+        var game=game(3);preparedGame(game);clock.now=clock.now.plusSeconds(45);roomService.expireMembers();
+        var result=json.readTree(db.queryForObject("SELECT result_json FROM match_progress WHERE match_id=?",String.class,game.match));
+        assertTrue(result.path("winnerMemberId").isNull());assertEquals("NO_PARTICIPANTS",result.path("reason").asText());
+        assertEquals("CLOSED",db.queryForObject("SELECT state FROM rooms WHERE id=?",String.class,game.room));
+    }
+    @Autowired com.brilliant.server.game.MatchScoring matchScoring;
+    @Autowired org.springframework.transaction.support.TransactionTemplate transactions;
+    @Test void failedAwardEventRollsBackTheEntirePlacementAndClaim() throws Exception {
+        var game=game(2);preparedGame(game);greenAlmostComplete(game);
+        int before=db.queryForObject("SELECT length(board_json) FROM match_players WHERE match_id=? AND member_id=?",Integer.class,game.match,memberId(game,0));
+        assertThrows(IllegalStateException.class,()->com.brilliant.server.database.Database.write(transactions,()->{
+            var engine=new com.brilliant.server.game.MatchEngine(db,json,clock,matchScoring);
+            engine.action(game.match,db.queryForObject("SELECT id FROM match_rounds WHERE match_id=?",String.class,game.match),memberId(game,0),"PLACE",0,"f5_c1",(type,text)->{if(type.equals("ZONE_CLAIMED"))throw new IllegalStateException("Evento no persistido");});return null;
+        }));
+        assertEquals(before,db.queryForObject("SELECT length(board_json) FROM match_players WHERE match_id=? AND member_id=?",Integer.class,game.match,memberId(game,0)));
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM zone_claims WHERE match_id=?",Integer.class,game.match));
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM round_actions WHERE round_id IN (SELECT id FROM match_rounds WHERE match_id=?)",Integer.class,game.match));
+    }
+    @Test void finalOrderUsesZonesThenLastPositiveAwardThenJoinOrderAndDeparturesLast() throws Exception {
+        var game=game(6);preparedGame(game);
+        String a=memberId(game,0),b=memberId(game,1),c=memberId(game,2),d=memberId(game,3),e=memberId(game,4),f=memberId(game,5);
+        // Same points: B has an extra zero-point completion and precedes A.
+        db.update("INSERT INTO zone_claims VALUES(?, 'verde_1',?,1,4,10)",game.match,a);
+        db.update("INSERT INTO zone_claims VALUES(?, 'verde_2',?,1,4,20)",game.match,b);
+        db.update("INSERT INTO zone_claims VALUES(?, 'morado_1',?,4,0,30)",game.match,b);
+        // Same points and zone count: positive-award sequence precedes the zero.
+        db.update("INSERT INTO zone_claims VALUES(?, 'rojo_1',?,2,4,5)",game.match,c);
+        db.update("INSERT INTO zone_claims VALUES(?, 'rojo_2',?,4,0,40)",game.match,c);
+        db.update("UPDATE room_members SET left_at=? WHERE id=?",clock.now.toString(),c);
+        com.brilliant.server.database.Database.write(transactions,()->{
+            matchScoring.finish(new com.brilliant.server.game.MatchEngine(db,json,clock,matchScoring).match(game.match),f,"ABANDONMENT",(type,text)->{});return null;
+        });
+        var result=json.valueToTree(matchScoring.result(game.match));
+        assertEquals(List.of(f,b,a,d,e,c),result.path("ranking").findValuesAsText("memberId"));
+        assertEquals(20,result.at("/ranking/1/scoreSequence").asInt());
+    }
+    @Test void expiredBallotsAndSimultaneousApprovalsFinishOnlyOnce() throws Exception {
+        var game=game(3);var vote=openBlockedVote(game);String id=vote.path("id").asText();ballot(game,0,id,true);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var a=pool.submit(()->ballot(game,1,id,true));var b=pool.submit(()->ballot(game,2,id,true));
+            var statuses=List.of(a.get().status,b.get().status);assertTrue(statuses.contains(200));assertTrue(statuses.stream().allMatch(x->x==200 || x==409));
+        }
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_events WHERE room_id=? AND type='MATCH_FINISHED'",Integer.class,game.room));
+        assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,game.match));
+    }
+    @Test void voteAndFrozenResultSurviveRealChannelReplacement() throws Exception {
+        var game=game(3);var vote=openBlockedVote(game);String voteId=vote.path("id").asText();
+        try(var first=channel(game.players.get(2),game.room)) {
+            assertEquals(vote,first.next("SNAPSHOT").at("/data/match/endVote"));
+            ballot(game,0,voteId,true);
+            assertEquals(1,first.next("END_VOTE_UPDATED").at("/data/match/endVote/ballots").size());
+        }
+        try(var replacement=channel(game.players.get(2),game.room)) {
+            var snapshot=replacement.next("SNAPSHOT");assertEquals(voteId,snapshot.at("/data/match/endVote/id").asText());
+            assertEquals(1,snapshot.at("/data/match/endVote/ballots").size());
+            var finished=ballot(game,1,voteId,true);assertEquals(200,finished.status);
+            assertEquals(finished.body.at("/data/match/result"),replacement.next("MATCH_FINISHED").at("/data/match/result"));
+        }
+        try(var result=channel(game.players.get(2),game.room)) {
+            assertEquals("END_VOTE",result.next("SNAPSHOT").at("/data/match/result/reason").asText());
+        }
+    }
+    @Test void deletingAnAccountPreservesClaimsNamesAndTheNextAvailablePrize() throws Exception {
+        var game=game(3);preparedGame(game);greenAlmostComplete(game);String route=actionRoute(game);
+        String departed=memberId(game,0),username=game.players.getFirst().body.at("/user/username").asText();
+        assertEquals(200,roomCommand("POST",route,game.players.getFirst(),Map.of("kind","PLACE","dieIndex",0,"cellId","f5_c1")).status);
+        assertEquals(204,request("DELETE","/users/me",Map.of("currentPassword",PASSWORD),access(game.players.getFirst())).status);
+        var remaining=request("GET","/rooms/"+game.room,null,access(game.players.get(1))).body;
+        assertEquals(24,remaining.at("/match/target").asInt());assertEquals("ROUND_ACTIVE",remaining.at("/match/state").asText());
+        assertEquals(memberId(game,1),remaining.at("/room/hostMemberId").asText());
+        var historical=remaining.at("/match/scores/0");assertEquals(departed,historical.path("memberId").asText());assertEquals(username,historical.path("username").asText());
+        assertEquals(4,historical.path("points").asInt());assertEquals(1,historical.path("abandoned").asInt());
+        var second=roomCommand("POST",route,game.players.get(1),Map.of("kind","PLACE","dieIndex",0,"cellId","f5_c1"));assertEquals(200,second.status);
+        assertEquals(List.of(4,3),db.queryForList("SELECT points FROM zone_claims WHERE match_id=? ORDER BY place",Integer.class,game.match));
+        assertNull(db.queryForObject("SELECT user_id FROM room_members WHERE id=?",String.class,departed));
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

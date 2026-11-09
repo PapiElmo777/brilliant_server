@@ -18,7 +18,7 @@ public class MatchesController {
         if(!actual.equals(required)) throw new ApiException(400,"VALIDATION_ERROR");
     }
     private String text(JsonNode b,String field) {
-        if(!b.path(field).isTextual()) throw new ApiException(400,"VALIDATION_ERROR");return b.path(field).textValue();
+        if(b==null || !b.path(field).isTextual()) throw new ApiException(400,"VALIDATION_ERROR");return b.path(field).textValue();
     }
     @PutMapping("/{id}/preparation") Object prepare(@PathVariable String id,@RequestBody JsonNode b,@AuthenticationPrincipal Jwt jwt) {
         fields(b,Set.of("commandId","placements"));
@@ -36,5 +36,13 @@ public class MatchesController {
             die=b.path("dieIndex").intValue();cell=text(b,"cellId");
         } else if(!"SKIP".equals(kind)) throw new ApiException(400,"VALIDATION_ERROR");
         return rooms.action(id,roundId,jwt.getSubject(),jwt.getClaimAsString("sid"),text(b,"commandId"),b,kind,die,cell);
+    }
+    @GetMapping("/{id}/end-vote") Object vote(@PathVariable String id,@AuthenticationPrincipal Jwt jwt) {
+        return rooms.vote(id,jwt.getSubject(),jwt.getClaimAsString("sid"));
+    }
+    @PutMapping("/{id}/end-vote/ballot") Object ballot(@PathVariable String id,@RequestBody JsonNode b,@AuthenticationPrincipal Jwt jwt) {
+        fields(b,Set.of("commandId","voteId","approve"));
+        if(!b.path("approve").isBoolean()) throw new ApiException(400,"VALIDATION_ERROR");
+        return rooms.ballot(id,jwt.getSubject(),jwt.getClaimAsString("sid"),text(b,"commandId"),b,text(b,"voteId"),b.path("approve").booleanValue());
     }
 }

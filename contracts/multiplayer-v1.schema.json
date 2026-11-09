@@ -778,7 +778,9 @@
         "state": {
           "enum": [
             "PREPARING",
-            "ROUND_ACTIVE"
+            "ROUND_ACTIVE",
+            "END_VOTE",
+            "FINISHED"
           ]
         },
         "levelId": {
@@ -837,7 +839,50 @@
           ]
         },
         "result": {
-          "type": "null"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/matchResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scores": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/score"
+          }
+        },
+        "claims": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 49,
+          "items": {
+            "$ref": "#/$defs/zonePrize"
+          }
+        },
+        "blockedRounds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "endVote": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/endVote"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -850,7 +895,299 @@
         "ownPreparationConfirmed",
         "ownBoard",
         "round",
-        "result"
+        "result",
+        "scores",
+        "claims",
+        "zones",
+        "blockedRounds",
+        "endVote"
+      ],
+      "additionalProperties": false
+    },
+    "score": {
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "username": {
+          "type": "string"
+        },
+        "joinOrder": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "abandoned": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completedZones": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scoreSequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "memberId",
+        "username",
+        "joinOrder",
+        "abandoned",
+        "points",
+        "completedZones",
+        "scoreSequence"
+      ],
+      "additionalProperties": false
+    },
+    "rankingEntry": {
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "username": {
+          "type": "string"
+        },
+        "joinOrder": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "abandoned": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completedZones": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scoreSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "memberId",
+        "username",
+        "joinOrder",
+        "abandoned",
+        "points",
+        "completedZones",
+        "scoreSequence",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "zoneId": {
+          "type": "string"
+        },
+        "memberId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "place": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "zoneId",
+        "memberId",
+        "place",
+        "points",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "zonePrize": {
+      "type": "object",
+      "properties": {
+        "zoneId": {
+          "type": "string"
+        },
+        "nextPlace": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "nextPoints": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "zoneId",
+        "nextPlace",
+        "nextPoints"
+      ],
+      "additionalProperties": false
+    },
+    "endBallot": {
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "approve": {
+          "enum": [
+            0,
+            1
+          ]
+        }
+      },
+      "required": [
+        "memberId",
+        "approve"
+      ],
+      "additionalProperties": false
+    },
+    "endVote": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "outcome": {
+          "enum": [
+            null,
+            "APPROVED",
+            "REJECTED",
+            "EXPIRED"
+          ]
+        },
+        "eligibleMemberIds": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "ballots": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/endBallot"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "startedAt",
+        "deadline",
+        "outcome",
+        "eligibleMemberIds",
+        "required",
+        "ballots"
+      ],
+      "additionalProperties": false
+    },
+    "endVoteResponse": {
+      "type": "object",
+      "properties": {
+        "endVote": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/endVote"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "endVote"
+      ],
+      "additionalProperties": false
+    },
+    "matchResult": {
+      "type": "object",
+      "properties": {
+        "winnerMemberId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "TARGET",
+            "ABANDONMENT",
+            "END_VOTE",
+            "NO_PARTICIPANTS"
+          ]
+        },
+        "ranking": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/rankingEntry"
+          }
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "winnerMemberId",
+        "reason",
+        "ranking",
+        "finishedAt"
       ],
       "additionalProperties": false
     }
