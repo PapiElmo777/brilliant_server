@@ -34,7 +34,7 @@ class RoundMigrationTest {
         }
         var settings=mock(Settings.Values.class);when(settings.directory()).thenReturn(directory);
         for(int run=0;run<2;run++) try(var source=new Database().dataSource(settings,new MockEnvironment())) {
-            var db=new JdbcTemplate(source);assertEquals(6,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
+            var db=new JdbcTemplate(source);assertEquals(7,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
             for(int i=0;i<checksums.size();i++) assertEquals(checksums.get(i),db.queryForObject("SELECT checksum FROM schema_migrations WHERE version=?",String.class,i+1));
             assertEquals("{}",db.queryForObject("SELECT board_json FROM match_players WHERE match_id='match' AND member_id='member'",String.class));
             assertNull(db.queryForObject("SELECT prepared_at FROM match_players WHERE match_id='match'",String.class));

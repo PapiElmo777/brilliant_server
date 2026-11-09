@@ -317,7 +317,8 @@
             "END_VOTE_RESOLVED",
             "MATCH_FINISHED",
             "SNAPSHOT",
-            "MEMBER_CONNECTION_CHANGED"
+            "MEMBER_CONNECTION_CHANGED",
+            "REMATCH_ACCEPTED"
           ]
         },
         "serverTime": {
@@ -883,6 +884,16 @@
               "type": "null"
             }
           ]
+        },
+        "rematch": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rematchAvailability"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -900,7 +911,8 @@
         "claims",
         "zones",
         "blockedRounds",
-        "endVote"
+        "endVote",
+        "rematch"
       ],
       "additionalProperties": false
     },
@@ -1188,6 +1200,24 @@
         "reason",
         "ranking",
         "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "rematchAvailability": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "acceptedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "available",
+        "acceptedCount"
       ],
       "additionalProperties": false
     }

@@ -43,6 +43,16 @@ public class RoomService {
     private List<Map<String,Object>> members(String id) {
         return db.queryForList("SELECT * FROM room_members WHERE room_id=? AND left_at IS NULL ORDER BY join_order",id);
     }
+    private List<Map<String,Object>> lobbyMembers(String id) {
+        return members(id).stream().filter(m->m.get("view_match_id")==null).toList();
+    }
+    private void inLobby(Map<String,Object> member) {
+        if(member.get("view_match_id")!=null) fail(409,"REMATCH_NOT_ACCEPTED");
+    }
+    private Map<String,Object> latestMatch(String id) {
+        var rows=db.queryForList("SELECT * FROM room_matches WHERE room_id=? ORDER BY rowid DESC LIMIT 1",id);
+        return rows.isEmpty()?null:rows.getFirst();
+    }
     private Map<String,Object> member(String id, String user) {
         return members(id).stream().filter(m -> user.equals(m.get("user_id"))).findFirst()
             .orElseThrow(() -> new ApiException(403,"NOT_ROOM_MEMBER"));
@@ -98,7 +108,7 @@ public class RoomService {
             accounts.requireActive(user,sid);
             var rooms = new ArrayList<Map<String,Object>>();
             for (var r : db.queryForList("SELECT * FROM rooms WHERE state='LOBBY' ORDER BY created_at,id")) {
-                var active = members((String)r.get("id"));
+                var active = lobbyMembers((String)r.get("id"));
                 var host = active.stream().filter(m -> m.get("id").equals(r.get("host_member_id"))).findFirst();
                 var item = new LinkedHashMap<String,Object>();
                 item.put("id",r.get("id")); item.put("name",r.get("name")); item.put("hostName",host.map(m -> m.get("username")).orElse(""));
@@ -146,16 +156,16 @@ public class RoomService {
     public Map<String,Object> join(String id, String user, String sid, String cid, JsonNode body) {
         return command(user,sid,cid,"join",id,body,() -> {
             var room = room(id); lobby(room); available(user);
-            if (members(id).size() >= ((Number)room.get("capacity")).intValue()) fail(409,"ROOM_FULL");
+            if (lobbyMembers(id).size() >= ((Number)room.get("capacity")).intValue()) fail(409,"ROOM_FULL");
             addMember(id,user,sid); event(id,"MEMBER_JOINED",accounts.byId(user).user().username()+" se unió a la sala."); return id;
         });
     }
     public Map<String,Object> settings(String id, String user, String sid, String cid, JsonNode body, Long expected, Integer capacity, String level, boolean chooseRandom) {
         return command(user,sid,cid,chooseRandom ? "random-level" : "settings",id,body,() -> {
-            var room = room(id); var member = member(id,user); host(room,member); lobby(room); revision(room,expected);
+            var room = room(id); var member = member(id,user); host(room,member); lobby(room); inLobby(member); revision(room,expected);
             int cap = chooseRandom ? ((Number)room.get("capacity")).intValue() : capacity == null ? 0 : capacity;
             if (cap < 2 || cap > 6) fail(400,"VALIDATION_ERROR");
-            if (cap < members(id).size()) fail(409,"CAPACITY_BELOW_OCCUPANCY");
+            if (cap < lobbyMembers(id).size()) fail(409,"CAPACITY_BELOW_OCCUPANCY");
             String selected = chooseRandom ? catalog.catalog().boards().get(random.nextInt(4)).id() : level;
             if (selected != null && catalog.catalog().boards().stream().noneMatch(b -> b.id().equals(selected))) fail(400,"VALIDATION_ERROR");
             db.update("UPDATE rooms SET capacity=?,level_id=?,revision=revision+1 WHERE id=?",cap,selected,id);
@@ -165,7 +175,7 @@ public class RoomService {
     public Map<String,Object> ready(String id, String user, String sid, String cid, JsonNode body, Long expected, Boolean ready) {
         if (ready == null) fail(400,"VALIDATION_ERROR");
         return command(user,sid,cid,"ready",id,body,() -> {
-            var room = room(id); var member = member(id,user); lobby(room); revision(room,expected);
+            var room = room(id); var member = member(id,user); lobby(room); inLobby(member); revision(room,expected);
             if (member.get("id").equals(room.get("host_member_id"))) fail(409,"HOST_STARTS_MATCH");
             db.update("UPDATE room_members SET ready=?,last_seen_at=CASE WHEN channel_id IS NULL THEN ? ELSE last_seen_at END WHERE id=?",ready ? 1 : 0,now(),member.get("id"));
             event(id,"READY_CHANGED"); return id;
@@ -174,7 +184,7 @@ public class RoomService {
     public Map<String,Object> start(String id, String user, String sid, String cid, JsonNode body, Long expected) {
         return command(user,sid,cid,"start",id,body,() -> {
             var room = room(id); host(room,member(id,user)); lobby(room); revision(room,expected);
-            var active = members(id);
+            var active = lobbyMembers(id);
             if (active.size() < 2) fail(409,"NOT_ENOUGH_PLAYERS");
             if (room.get("level_id") == null) fail(409,"LEVEL_REQUIRED");
             if (active.stream().anyMatch(m -> !connected(m) || (!m.get("id").equals(room.get("host_member_id")) && ((Number)m.get("ready")).intValue() == 0)))
@@ -182,6 +192,7 @@ public class RoomService {
             String matchId = UUID.randomUUID().toString();
             db.update("INSERT INTO room_matches VALUES(?,?,?,?,?,?,?,?)",matchId,id,room.get("level_id"),1,Scoring.target(active.size()),"PREPARING",encode(publicMembers(active)),now());
             db.update("UPDATE rooms SET state='PREPARING' WHERE id=?",id);
+            for(var participant:active) db.update("UPDATE room_members SET view_match_id=? WHERE id=?",matchId,participant.get("id"));
             matches.initialize(matchId,id);
             event(id,"MATCH_STARTED"); return id;
         });
@@ -199,9 +210,12 @@ public class RoomService {
     private void remove(Map<String,Object> member,boolean advance) {
         String id = (String)member.get("room_id");
         if (db.update("UPDATE room_members SET left_at=?,ready=0 WHERE id=? AND left_at IS NULL",now(),member.get("id")) == 0) return;
-        var room = room(id); var remaining = members(id);
+        var room = room(id); var allRemaining = members(id);
+        var latest=latestMatch(id);
+        var remaining = "LOBBY".equals(room.get("state"))?lobbyMembers(id):latest==null?allRemaining:
+            allRemaining.stream().filter(m->latest.get("id").equals(m.get("view_match_id"))).toList();
         if (remaining.isEmpty()) {
-            db.update("UPDATE rooms SET state='CLOSED',host_member_id=NULL WHERE id=?",id);
+            db.update("UPDATE rooms SET state=?,host_member_id=? WHERE id=?",allRemaining.isEmpty()?"CLOSED":"FINISHED",allRemaining.isEmpty()?null:allRemaining.getFirst().get("id"),id);
         } else if (member.get("id").equals(room.get("host_member_id"))) {
             var next = remaining.stream().filter(this::connected).findFirst().orElse(remaining.getFirst());
             db.update("UPDATE rooms SET host_member_id=?,revision=revision+1 WHERE id=?",next.get("id"),id);
@@ -242,14 +256,15 @@ public class RoomService {
         return result;
     }
     private Map<String,Object> snapshot(String id) {
-        var r = room(id); var room = new LinkedHashMap<String,Object>();
+        var r = room(id); var room = new LinkedHashMap<String,Object>();var latest=latestMatch(id);
+        var visible="LOBBY".equals(r.get("state"))?lobbyMembers(id):latest==null?members(id):members(id).stream().filter(m->latest.get("id").equals(m.get("view_match_id"))).toList();
         for (String field : List.of("id","name","capacity","state","revision")) room.put(field,r.get(field));
-        room.put("hostMemberId",r.get("host_member_id")); room.put("levelId",r.get("level_id")); room.put("members",publicMembers(members(id)));
+        room.put("hostMemberId",r.get("host_member_id")); room.put("levelId",r.get("level_id")); room.put("members",publicMembers(visible));
         var result = new LinkedHashMap<String,Object>();
         result.put("protocolVersion",1); result.put("rulesVersion",1); result.put("roomId",id); result.put("sequence",r.get("sequence"));
         result.put("serverTime",now()); result.put("room",room); result.put("messages",historyRows(id,Long.MAX_VALUE,20)); result.put("match",null);
-        var matches = db.queryForList("SELECT * FROM room_matches WHERE room_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1",id);
-        if (!matches.isEmpty()) {
+        var matches = db.queryForList("SELECT * FROM room_matches WHERE room_id=? ORDER BY rowid DESC LIMIT 1",id);
+        if (!matches.isEmpty() && !"LOBBY".equals(r.get("state"))) {
             result.put("match",this.matches.publicView(matches.getFirst()));
         }
         return result;
@@ -264,13 +279,27 @@ public class RoomService {
         }
         return snapshot;
     }
+    @SuppressWarnings("unchecked")
     private Map<String,Object> snapshotFor(String id,String user) {
-        var snapshot=snapshot(id);var match=(Map<?,?>)snapshot.get("match");
-        if(match==null) return snapshot;
-        var own=db.queryForList("SELECT id FROM room_members WHERE room_id=? AND user_id=? ORDER BY join_order DESC LIMIT 1",id,user);
-        return own.isEmpty()?snapshot:overlay(snapshot,matches.privateView((String)match.get("id"),(String)own.getFirst().get("id")));
+        var snapshot=snapshot(id);var r=room(id);
+        var own=db.queryForList("SELECT * FROM room_members WHERE room_id=? AND user_id=? ORDER BY join_order DESC LIMIT 1",id,user);
+        if(own.isEmpty()) return snapshot;
+        var m=own.getFirst();String view=(String)m.get("view_match_id");
+        if(view==null) {snapshot.put("match",null);return snapshot;}
+        var selected=matches.match(view);var match=matches.publicView(selected);snapshot.put("match",match);
+        var publicRoom=(Map<String,Object>)snapshot.get("room");
+        if("FINISHED".equals(selected.get("state"))) {
+            publicRoom.put("state","FINISHED");publicRoom.put("levelId",selected.get("level_id"));
+            publicRoom.put("members",publicMembers(members(id).stream().filter(p->view.equals(p.get("view_match_id"))).toList()));
+            var latest=latestMatch(id);
+            boolean available=latest!=null && view.equals(latest.get("id")) && !"CLOSED".equals(r.get("state"));
+            match.put("rematch",Map.of("available",available,"acceptedCount",db.queryForObject("SELECT COUNT(*) FROM rematch_acceptances WHERE match_id=?",Integer.class,view)));
+        }
+        return overlay(snapshot,matches.privateView(view,(String)m.get("id")));
     }
     private Map<String,Object> eventView(String id,long sequence,String user,Map<String,Object> snapshot) {
+        var personal=db.queryForList("SELECT e.snapshot_json FROM room_member_events e JOIN room_members m ON m.id=e.member_id WHERE e.room_id=? AND e.sequence=? AND m.user_id=?",id,sequence,user);
+        if(!personal.isEmpty()) return decode((String)personal.getFirst().get("snapshot_json"));
         var views=db.queryForList("SELECT v.private_json FROM room_event_views v JOIN room_members m ON m.id=v.member_id WHERE v.room_id=? AND v.sequence=? AND m.user_id=?",id,sequence,user);
         return views.isEmpty()?snapshot:overlay(snapshot,decode((String)views.getFirst().get("private_json")));
     }
@@ -284,6 +313,21 @@ public class RoomService {
         String id=(String)matches.match(matchId).get("room_id");
         return command(user,sid,cid,"action",matchId+"/"+roundId,body,()->{
             var own=member(id,user);matches.action(matchId,roundId,(String)own.get("id"),kind,die,cell,(type,text)->event(id,type,text));return id;
+        });
+    }
+    public Map<String,Object> rematch(String matchId,String user,String sid,String cid,JsonNode body) {
+        String id=(String)matches.match(matchId).get("room_id");
+        return command(user,sid,cid,"rematch",matchId,body,()->{
+            var r=room(id);var own=member(id,user);var latest=latestMatch(id);
+            if(latest==null || !matchId.equals(latest.get("id")) || !"FINISHED".equals(latest.get("state")) || "CLOSED".equals(r.get("state"))) fail(409,"REMATCH_CLOSED");
+            if(db.queryForList("SELECT 1 FROM match_players WHERE match_id=? AND member_id=?",matchId,own.get("id")).isEmpty()) fail(403,"NOT_MATCH_PARTICIPANT");
+            if(own.get("view_match_id")==null && matchId.equals(r.get("rematch_source_id"))) return id;
+            if(!matchId.equals(own.get("view_match_id"))) fail(409,"REMATCH_CLOSED");
+            if("LOBBY".equals(r.get("state")) && lobbyMembers(id).size()>=((Number)r.get("capacity")).intValue()) fail(409,"ROOM_FULL");
+            if(!"LOBBY".equals(r.get("state"))) db.update("UPDATE rooms SET state='LOBBY',host_member_id=?,level_id=NULL,rematch_source_id=?,revision=revision+1 WHERE id=?",own.get("id"),matchId,id);
+            db.update("UPDATE room_members SET view_match_id=NULL,ready=0 WHERE id=?",own.get("id"));
+            db.update("INSERT INTO rematch_acceptances VALUES(?,?,?)",matchId,own.get("id"),now());
+            event(id,"REMATCH_ACCEPTED",own.get("username")+" aceptó la revancha. Nuevo lobby disponible.");return id;
         });
     }
     public Map<String,Object> vote(String matchId,String user,String sid) {
@@ -402,6 +446,9 @@ public class RoomService {
         db.update("UPDATE rooms SET sequence=sequence+1 WHERE id=?",id);
         var snapshot = snapshot(id);
         db.update("INSERT INTO room_events VALUES(?,?,?,?,?)",id,snapshot.get("sequence"),type,now(),encode(snapshot));
+        for(var m:members(id)) {
+            if(m.get("user_id")!=null) db.update("INSERT INTO room_member_events VALUES(?,?,?,?)",id,snapshot.get("sequence"),m.get("id"),encode(snapshotFor(id,(String)m.get("user_id"))));
+        }
         var match=(Map<?,?>)snapshot.get("match");
         if(match!=null) {
             for(var player:db.queryForList("SELECT member_id FROM match_players WHERE match_id=?",match.get("id"))) {

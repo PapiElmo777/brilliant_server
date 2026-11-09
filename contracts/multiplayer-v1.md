@@ -1,6 +1,6 @@
 # Multijugador — contrato v1
 
-Implementación de las entregas 1–5 del plan, actualizada el 8 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. WebSocket, envío de chat e historial están disponibles. Preparación, rondas, premios, marcador, votación y resultado persistido están disponibles. Las animaciones finales y la revancha pertenecen a entrega 6. Cuentas conserva sus rutas existentes.
+Implementación de las entregas 1–6 del plan, actualizada el 8 de noviembre de 2026. Las rutas HTTP de salas, ajustes, Listo y comienzo de preparación están expuestas. WebSocket, envío de chat e historial están disponibles. Preparación, rondas, premios, marcador, votación y resultado persistido están disponibles. Animaciones finales y revancha disponibles en entrega 6; evaluación completa/LAN corresponde a entrega 7. Cuentas conserva sus rutas existentes.
 
 Los esquemas JSON Schema 2020-12 de cuerpos, respuestas y sobres de evento están en `multiplayer-v1.schema.json` (`$defs`). Los esquemas de sala, miembro, listado e instantánea describen la entrega actual; los sobres de eventos y el historial describen el canal actual. No sustituyen autorización ni validación de dominio. El esquema de match incluye preparación privada y rondas; el resultado final, premios, marcador y votación describen la entrega 5.
 
@@ -18,7 +18,7 @@ Acción: PLACE o SKIP, una por participante/ronda. Con dados `[a,b]`, `dieIndex`
 
 `rulesVersion: 1` referencia `catalog-v1.json`: cuatro mapas, coordenadas base cero, casillas `f1_c1`, reglas RED/YELLOW distintas, BLUE/WHITE iguales, GREEN libre, PURPLE hasta dos distintos, ORANGE_LOW 1–3 y ORANGE_HIGH 4–6. Los premios son por zona/mapa; puestos 4–6 dan cero. Todas las colocaciones tienen rango 1–6, adyacencia ortogonal a un número igual al otro dado y destino vacío. Preparación requiere exactamente las seis casillas iniciales con 1–6 sin repetidos y reglas válidas.
 
-Meta con participantes iniciales: 2→26, 3→24, 4→22, 5–6→20. Permanece fija ante abandonos. Ranking: puntos descendentes, zonas descendentes, secuencia del último premio positivo ascendente. Completar con cero no cambia el momento de alcanzar la puntuación. Confirmado el 8 de noviembre de 2026: los abandonos van después de quienes siguen; el empate absoluto se resuelve por orden de ingreso. El ganador ocupa el primer puesto incluso si gana por abandono con menos puntos. La política de reinicio de Java y la asignación de anfitrión de revancha siguen pendientes.
+Meta con participantes iniciales: 2→26, 3→24, 4→22, 5–6→20. Permanece fija ante abandonos. Ranking: puntos descendentes, zonas descendentes, secuencia del último premio positivo ascendente. Completar con cero no cambia el momento de alcanzar la puntuación. Confirmado el 8 de noviembre de 2026: los abandonos van después de quienes siguen; el empate absoluto se resuelve por orden de ingreso. El ganador ocupa el primer puesto incluso si gana por abandono con menos puntos. El primer aceptante asume el anfitrión de revancha y se admiten jugadores nuevos (confirmado el 8 de noviembre). La política de reinicio de Java sigue pendiente.
 
 ## Operaciones y cuerpos
 
@@ -62,7 +62,7 @@ Formato existente `{error:{code,...}}`; el cliente decide por code, nunca por te
 - 401 UNAUTHORIZED, ACCESS_TOKEN_EXPIRED, SESSION_INVALID.
 - 403 NOT_ROOM_MEMBER, NOT_MATCH_PARTICIPANT, HOST_ONLY.
 - 404 ROOM_NOT_FOUND, MATCH_NOT_FOUND.
-- 409 PREPARATION_CLOSED, PREPARATION_ALREADY_CONFIRMED, CAPACITY_BELOW_OCCUPANCY, LEVEL_REQUIRED, HOST_STARTS_MATCH, ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE, VOTE_ACTIVE, BALLOT_ALREADY_CAST.
+- 409 PREPARATION_CLOSED, PREPARATION_ALREADY_CONFIRMED, CAPACITY_BELOW_OCCUPANCY, LEVEL_REQUIRED, HOST_STARTS_MATCH, ROOM_FULL, ROOM_ALREADY_STARTED, ALREADY_IN_ROOM, STALE_SETTINGS, COMMAND_CONFLICT, NOT_ENOUGH_PLAYERS, PLAYERS_NOT_READY, PREPARATION_PENDING, ROUND_EXPIRED, ACTION_ALREADY_RESOLVED, MATCH_FINISHED, VOTE_NOT_ACTIVE, VOTE_ACTIVE, BALLOT_ALREADY_CAST, REMATCH_CLOSED, REMATCH_NOT_ACCEPTED.
 - 429 RATE_LIMITED con Retry-After.
 
 ## Renovación implementada
@@ -104,7 +104,7 @@ Chat: texto plano de 1–300 puntos de código Unicode, sin controles salvo salt
 
 La instantánea contiene los últimos 20 mensajes; GET /messages?before=N obtiene los 20 anteriores en orden ascendente y devuelve nextBefore. El cliente conserva hasta 200 mensajes en memoria y detiene la carga al alcanzar ese límite. Muestra no leídos del historial cargado, conserva el borrador ante un resultado incierto y lo limpia al confirmar el mismo comando. El panel se cierra con el teclado abierto; logout/caducidad desmontan también el chat. La burbuja comparte la franja de controles del lobby sin superponerse al mapa.
 
-El outbox conserva estado público con ownBoard vacío; V005 almacena por separado la proyección privada de cada participante en la misma transacción y secuencia. HTTP y WebSocket envían solo el tablero del solicitante. Los eventos atrasados usan su proyección histórica, sin mezclar un tablero futuro con dados anteriores. Votación, premios y resultado persistido se integran en entrega 5. Animaciones finales, revancha y la política de reinicio de Java permanecen pendientes.
+El outbox conserva estado público con ownBoard vacío; V005 almacena por separado la proyección privada de cada participante en la misma transacción y secuencia. HTTP y WebSocket envían solo el tablero del solicitante. Los eventos atrasados usan su proyección histórica, sin mezclar un tablero futuro con dados anteriores. Votación, premios y resultado persistido se integran en entrega 5. Animaciones y revancha se integran en entrega 6. La política de reinicio de Java permanece pendiente.
 
 Referencias de implementación: [WebSocket en Spring Framework 6.2](https://docs.spring.io/spring-framework/reference/6.2/web/websocket/server.html), [WebSocket.connect de Dart](https://api.dart.dev/dart-io/WebSocket/connect.html) y [límites de Tomcat 10.1](https://tomcat.apache.org/tomcat-10.1-doc/web-socket-howto.html). No se actualizaron Spring Boot ni las versiones de reglas por esta entrega.
 
@@ -123,7 +123,7 @@ V005 agrega match_players, match_rounds, round_actions y room_event_views; prese
 
 Flutter reutiliza los cuatro mapas, permite acomodo manual, intercambio y ayuda aleatoria, muestra una propuesta resaltada y ofrece Confirmar jugada/Omitir ronda. El tablero completo, el reloj y el chat son accesibles en 320×568, 390×844 y 844×390, con pruebas de texto 2×. La animación visual usa únicamente los dados recibidos.
 
-La entrega 4 no adjudicaba premios globales ni finales: esas capacidades se integran a continuación en entrega 5. Animaciones finales y revancha siguen pendientes. Verificación: 59 pruebas Java, pruebas Flutter de preparación/acciones/reintentos/reloj y recorrido real de seis canales contra el JAR con datos temporales. Los timeouts y las carreras se verifican con reloj controlado en Java.
+La entrega 4 no adjudicaba premios globales ni finales: esas capacidades se integran a continuación en entrega 5. Animaciones finales y revancha se integran en entrega 6. Verificación: 59 pruebas Java, pruebas Flutter de preparación/acciones/reintentos/reloj y recorrido real de seis canales contra el JAR con datos temporales. Los timeouts y las carreras se verifican con reloj controlado en Java.
 
 
 ## Premios, continuidad y votación — entrega 5 (8 de noviembre de 2026)
@@ -132,7 +132,7 @@ V006 añade match_progress, zone_claims, end_votes y end_ballots sin modificar V
 
 match incorpora scores, claims, zones, blockedRounds y endVote. scores publica memberId, username, joinOrder, abandoned (0/1), points, completedZones y scoreSequence; claims publica zoneId, memberId, place, points y sequence. zones contiene zoneId, nextPlace y nextPoints; tras seis reclamos nextPlace es 7 y nextPoints es 0. Los tableros ajenos siguen siendo privados. Flutter muestra puntuación propia/meta y un marcador horizontal con los rivales; mantener pulsada una zona refleja los puestos consumidos.
 
-Al alcanzar la meta, Java fija FINISHED, ganador y ranking antes de aceptar otra acción, cierra la ronda sin crear otra y emite MATCH_FINISHED. result es inmutable: winnerMemberId nullable, reason TARGET/ABANDONMENT/END_VOTE/NO_PARTICIPANTS, ranking con position y finishedAt. Las salidas posteriores no reordenan el resultado. La pantalla actual muestra un resumen y permite salir; animaciones y revancha se integrarán en entrega 6.
+Al alcanzar la meta, Java fija FINISHED, ganador y ranking antes de aceptar otra acción, cierra la ronda sin crear otra y emite MATCH_FINISHED. result es inmutable: winnerMemberId nullable, reason TARGET/ABANDONMENT/END_VOTE/NO_PARTICIPANTS, ranking con position y finishedAt. Las salidas posteriores no reordenan el resultado. La entrega 6 presenta animaciones y ranking con Revancha/Salir al menú.
 
 La meta original y los reclamos se conservan tras salidas, logout, borrado o agotamiento de presencia. Se deja de esperar a quien sale y se transfiere el anfitrión por la política existente. Si queda uno, gana por abandono incluso desde preparación o durante votación; si no queda nadie, se cierra sin ganador. La expiración de varios miembros en una misma revisión los retira como lote antes de determinar el ganador, evitando una victoria accidental por el orden de las filas.
 
@@ -143,3 +143,22 @@ endVote contiene id, startedAt, deadline, outcome nullable APPROVED/REJECTED/EXP
 Reglas confirmadas por el usuario el 8 de noviembre: pausa durante votación, continuación sin mayoría, nueva oferta tras otras tres rondas bloqueadas, retirada del voto de quien abandona y recálculo de mayoría. Con un restante prevalece victoria por abandono. Cambiar anfitrión o reconectar conserva la votación. Las instantáneas, recibos y eventos autorizados restauran voto, plazo, marcador y resultado.
 
 Verificación: 75 pruebas Java, incluidas carreras de seis reclamos, puntos 4–6 a cero, reversión transaccional, meta, orden final, mayorías 2–6, voto inmutable, rechazo/timeout, racha, abandono y expiración simultánea. Votación y resultado se restauran por WebSocket real; migración V005→V006 y reapertura preservan tablero/ronda/acción y checksums. Recorrido Dart→JAR con seis canales juega hasta completar zonas reales, comprueba premios/privacidad comunes y termina por abandono conservando reclamos. Los casos de bloqueo usan posiciones válidas preparadas en una base temporal y reloj controlado. No equivale a seis teléfonos físicos.
+
+
+## Final y revancha — entrega 6 (8 de noviembre de 2026)
+
+Solo winnerMemberId recibe CelebracionVictoria, reutilizada del modo local con el mapa y puntos confirmados. Los demás ven un láser, impacto y caída de su nave con «Usted ha quedado en N lugar». Ver ranking omite la secuencia; movimiento reducido abre directamente el resultado sin láser ni caída. La animación no envía comandos ni altera ranking/puntos y no se repite al recibir eventos o reconectar dentro de la misma pantalla/sesión de sala. Una partida con ID nuevo puede mostrar otra animación.
+
+Ranking con ganador, motivo, posiciones/puntos/zonas/abandonos congelados y fila propia resaltada. Ofrece Revancha y Salir al menú principal; esta última confirma la salida y espera a Java antes de volver al menú. Chat permanece accesible. Layout verificado en tres tamaños y texto 2×.
+
+POST /matches/{id}/rematch acepta únicamente {commandId}. Exige miembro activo de esa participación finalizada. Su recibo idempotente conserva la instantánea autorizada; otro commandId del mismo aceptante no crea otra aceptación. Java publica REMATCH_ACCEPTED con mensaje de sistema. Antes de terminar o después de iniciar la siguiente partida responde REMATCH_CLOSED; un participante que aún no acepta recibe REMATCH_NOT_ACCEPTED si intenta cambiar Listo en el nuevo lobby.
+
+Confirmado por el usuario el 8 de noviembre: el primer aceptante es el anfitrión; el anterior no recupera el rol si acepta después. El lobby aparece en el listado y admite jugadores nuevos con las mismas reglas de cupo/entrada. La capacidad máxima se conserva, el mapa vuelve a estar sin elegir y Listo se reinicia al aceptar (cambiar mapa/capacidad después sigue conservando Listo). Con un aceptante no se puede iniciar; desde dos presentes, mapa elegido y todos los invitados listos se crea otro ID de partida y se recalcula la meta. Preparación, tableros, dados, acciones, reclamos, puntos, votaciones y resultado son nuevos. El historial de sala se conserva, con mensajes de sistema de revancha e inicio como separadores.
+
+La misma sala puede mostrar resultados antiguos y lobby/partida nueva a miembros distintos. V007 añade view_match_id por miembro, rematch_source_id de sala, rematch_acceptances y room_member_events, sin alterar V001–V006. La ocupación del lobby y sus permisos cuentan solo miembros que aceptaron o entraron como nuevos. Quienes siguen en resultados no consumen cupo de la siguiente partida y conservan su propio resultado/tablero, incluso cuando ya empezó otra. Entonces match.rematch.available pasa a false; deben salir para entrar de nuevo como jugadores nuevos. No se expone el tablero de otro participante.
+
+match.rematch es null durante el juego y {available, acceptedCount} al consultar un resultado. acceptedCount cuenta aceptaciones registradas de esa partida; la ocupación actual procede de room.members en el lobby. Se almacena la instantánea autorizada de cada miembro en la misma secuencia del evento, por lo que un evento atrasado no mezcla aceptación, resultado o tablero futuros. GET y la primera instantánea del canal seleccionan la vista persistida del miembro. El outbox común continúa sin tableros privados. Eventos anteriores a V007 conservan la proyección histórica V005.
+
+Al salir el anfitrión del nuevo lobby o partida, el rol pasa a un aceptante/entrante actual; quienes ven resultados anteriores no participan de esa transferencia. La lista de participantes y sus contadores muestran solo la partida/vista correspondiente. Si se vacía ese lobby pero quedan personas en resultados, estos conservan la oportunidad de abrirlo de nuevo; si no queda nadie, la sala se cierra. Salir desde un resultado anterior no abandona la nueva partida, porque no pertenece a su lista de participantes. Al iniciar se cierra la aceptación del resultado anterior.
+
+Verificación: 83 pruebas Java, incluidas aceptación parcial, cupo con jugadores nuevos, carrera de aceptaciones, permisos/recibos, vistas y eventos históricos diferenciados, transferencia y migración V006→V007/reapertura. Flutter verifica exclusividad de victoria/derrota, puesto, salto, movimiento reducido, no repetición, revancha incierta y salida al menú; capturas de ranking/animaciones. Recorrido real adicional de siete clientes/seis canales: premios, final por abandono y revancha de tres con otro mapa, meta 24, preparación limpia y nueva ronda común número 1. Datos temporales, sin afirmar prueba en seis teléfonos físicos.

@@ -745,6 +745,112 @@ class ApiIntegrationTest {
         assertEquals(List.of(4,3),db.queryForList("SELECT points FROM zone_claims WHERE match_id=? ORDER BY place",Integer.class,game.match));
         assertNull(db.queryForObject("SELECT user_id FROM room_members WHERE id=?",String.class,departed));
     }
+    GameSetup finishedGame(int players) throws Exception {
+        var game=game(players);var vote=openBlockedVote(game);
+        for(int i=0;i<players/2+1;i++) assertEquals(200,ballot(game,i,vote.path("id").asText(),true).status);
+        return game;
+    }
+    Reply acceptRematch(GameSetup game,int player) throws Exception {
+        return roomCommand("POST","/matches/"+game.match+"/rematch",game.players.get(player),Map.of());
+    }
+    @Test void partialRematchKeepsOldResultsAndStartsCleanWithNewTarget() throws Exception {
+        var game=finishedGame(6);
+        var old=request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/result");
+        var first=acceptRematch(game,1);assertEquals(200,first.status);assertTrue(first.body.at("/data/match").isNull());
+        assertEquals(memberId(game,1),first.body.at("/data/room/hostMemberId").asText());assertEquals(1,first.body.at("/data/room/members").size());
+        assertTrue(first.body.at("/data/room/levelId").isNull());
+        assertEquals(old,request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/result"));
+        error(roomCommand("PUT","/rooms/"+game.room+"/ready",game.players.getFirst(),Map.of("expectedRevision",2,"ready",true)),409,"REMATCH_NOT_ACCEPTED");
+        var second=acceptRematch(game,0);assertEquals(memberId(game,1),second.body.at("/data/room/hostMemberId").asText());
+        for(var m:second.body.at("/data/room/members")) assertFalse(m.path("ready").asBoolean());
+        var selected=roomCommand("PATCH","/rooms/"+game.room+"/settings",game.players.get(1),Map.of("expectedRevision",2,"capacity",6,"levelId","tablero_01"));assertEquals(200,selected.status);
+        error(roomCommand("POST","/rooms/"+game.room+"/start",game.players.get(1),Map.of("expectedRevision",3)),409,"PLAYERS_NOT_READY");
+        roomCommand("PUT","/rooms/"+game.room+"/ready",game.players.getFirst(),Map.of("expectedRevision",3,"ready",true));
+        var started=roomCommand("POST","/rooms/"+game.room+"/start",game.players.get(1),Map.of("expectedRevision",3));assertEquals(200,started.status);
+        var fresh=started.body.at("/data/match");String newId=fresh.path("id").asText();assertNotEquals(game.match,newId);
+        assertEquals(2,started.body.at("/data/room/members").size());
+        assertEquals(26,fresh.path("target").asInt());assertEquals(2,fresh.path("participants").size());assertEquals(0,fresh.path("ownBoard").size());
+        assertEquals(0,fresh.path("claims").size());assertEquals(0,fresh.path("preparedMemberIds").size());assertTrue(fresh.path("round").isNull());assertTrue(fresh.path("result").isNull());
+        assertEquals(0,fresh.path("scores").findValues("points").stream().mapToInt(JsonNode::asInt).sum());
+        var stayed=request("GET","/rooms/"+game.room,null,access(game.players.get(2))).body;
+        assertEquals(game.match,stayed.at("/match/id").asText());assertEquals(old,stayed.at("/match/result"));assertEquals("FINISHED",stayed.at("/room/state").asText());assertFalse(stayed.at("/match/rematch/available").asBoolean());
+        error(acceptRematch(game,2),409,"REMATCH_CLOSED");
+        error(roomCommand("PUT","/matches/"+newId+"/preparation",game.players.get(2),Map.of("placements",preparation(0))),403,"NOT_MATCH_PARTICIPANT");
+        for(int i:List.of(0,1)) assertEquals(200,roomCommand("PUT","/matches/"+newId+"/preparation",game.players.get(i),Map.of("placements",preparation(i))).status);
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM match_rounds WHERE match_id=?",Integer.class,newId));
+        assertEquals(old,request("GET","/rooms/"+game.room,null,access(game.players.get(2))).body.at("/match/result"));
+    }
+    @Test void newPlayersCanJoinRematchWithoutReservingPlacesForOldResultViewers() throws Exception {
+        var game=finishedGame(6);acceptRematch(game,1);
+        for(int i=0;i<5;i++) {var newcomer=register();assertEquals(200,roomCommand("POST","/rooms/"+game.room+"/join",newcomer,Map.of()).status);}
+        var outsider=register();error(roomCommand("POST","/rooms/"+game.room+"/join",outsider,Map.of()),409,"ROOM_FULL");
+        error(acceptRematch(game,0),409,"ROOM_FULL");
+        assertEquals(game.match,request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/id").asText());
+        var listed=request("GET","/rooms",null,access(outsider));
+        var listedRoom=java.util.stream.StreamSupport.stream(listed.body.path("rooms").spliterator(),false).filter(r->r.path("id").asText().equals(game.room)).findFirst().orElseThrow();
+        assertEquals(6,listedRoom.path("occupancy").asInt());assertEquals(11,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE room_id=? AND left_at IS NULL",Integer.class,game.room));
+    }
+    @Test void rematchReceiptsAreIdempotentAndOnlyFinishedParticipantsCanAccept() throws Exception {
+        var unfinished=game(2);error(acceptRematch(unfinished,0),409,"REMATCH_CLOSED");
+        var game=finishedGame(3);var outsider=register();
+        error(roomCommand("POST","/matches/"+game.match+"/rematch",outsider,Map.of()),403,"NOT_ROOM_MEMBER");
+        var body=Map.of("commandId",UUID.randomUUID().toString());String route="/matches/"+game.match+"/rematch";
+        var accepted=request("POST",route,body,access(game.players.get(1)));assertEquals(200,accepted.status);
+        assertEquals(accepted.body,request("POST",route,body,access(game.players.get(1))).body);
+        assertEquals(200,acceptRematch(game,1).status);
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM rematch_acceptances WHERE match_id=?",Integer.class,game.match));
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM room_events WHERE room_id=? AND type='REMATCH_ACCEPTED'",Integer.class,game.room));
+        error(roomCommand("POST",route,game.players.getFirst(),Map.of("points",999)),400,"VALIDATION_ERROR");
+    }
+    @Test void concurrentRematchAcceptancesChooseOneHostAndOldHostCannotTakeItBack() throws Exception {
+        var game=finishedGame(4);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var a=pool.submit(()->acceptRematch(game,1));var b=pool.submit(()->acceptRematch(game,2));
+            assertEquals(200,a.get().status);assertEquals(200,b.get().status);
+        }
+        String host=db.queryForObject("SELECT host_member_id FROM rooms WHERE id=?",String.class,game.room);
+        assertTrue(Set.of(memberId(game,1),memberId(game,2)).contains(host));
+        assertEquals(200,acceptRematch(game,0).status);
+        assertEquals(host,db.queryForObject("SELECT host_member_id FROM rooms WHERE id=?",String.class,game.room));
+        assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM room_members WHERE room_id=? AND left_at IS NULL AND view_match_id IS NULL",Integer.class,game.room));
+    }
+    @Test void rematchHostDepartureTransfersOnlyToAcceptedPlayersAndEmptyLobbyCanReopen() throws Exception {
+        var game=finishedGame(4);acceptRematch(game,1);acceptRematch(game,2);
+        roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(1),Map.of());
+        assertEquals(memberId(game,2),db.queryForObject("SELECT host_member_id FROM rooms WHERE id=?",String.class,game.room));
+        roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(2),Map.of());
+        assertEquals("FINISHED",db.queryForObject("SELECT state FROM rooms WHERE id=?",String.class,game.room));
+        var reopened=acceptRematch(game,3);assertEquals(200,reopened.status);
+        assertEquals(memberId(game,3),reopened.body.at("/data/room/hostMemberId").asText());
+        assertEquals(1,reopened.body.at("/data/room/members").size());
+    }
+    @Test void rematchEventsAndReconnectKeepPersonalViewsAtTheirOriginalSequences() throws Exception {
+        var game=finishedGame(3);var original=request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/result");
+        try(var old=channel(game.players.getFirst(),game.room);var accepted=channel(game.players.get(1),game.room)) {
+            old.next("SNAPSHOT");accepted.next("SNAPSHOT");
+            acceptRematch(game,1);
+            // Another acceptance commits before draining the preceding event.
+            acceptRematch(game,2);
+            var first=old.next("REMATCH_ACCEPTED");assertEquals(original,first.at("/data/match/result"));assertEquals(1,first.at("/data/match/rematch/acceptedCount").asInt());
+            assertTrue(accepted.next("REMATCH_ACCEPTED").at("/data/match").isNull());
+            assertEquals(2,old.next("REMATCH_ACCEPTED").at("/data/match/rematch/acceptedCount").asInt());
+        }
+        try(var old=channel(game.players.getFirst(),game.room);var lobby=channel(game.players.get(1),game.room)) {
+            assertEquals(original,old.next("SNAPSHOT").at("/data/match/result"));
+            var snapshot=lobby.next("SNAPSHOT");assertTrue(snapshot.at("/data/match").isNull());assertEquals(2,snapshot.at("/data/room/members").size());
+        }
+    }
+    @Test void departureDuringTheNewGameCannotTransferHostToAnOldResultViewer() throws Exception {
+        var game=finishedGame(4);acceptRematch(game,1);acceptRematch(game,2);
+        roomCommand("PATCH","/rooms/"+game.room+"/settings",game.players.get(1),Map.of("expectedRevision",2,"capacity",6,"levelId","tablero_01"));
+        roomCommand("PUT","/rooms/"+game.room+"/ready",game.players.get(2),Map.of("expectedRevision",3,"ready",true));
+        var started=roomCommand("POST","/rooms/"+game.room+"/start",game.players.get(1),Map.of("expectedRevision",3));assertEquals(200,started.status);
+        var departed=roomCommand("POST","/rooms/"+game.room+"/leave",game.players.get(1),Map.of());assertEquals(200,departed.status);
+        var survivor=request("GET","/rooms/"+game.room,null,access(game.players.get(2))).body;
+        assertEquals(memberId(game,2),survivor.at("/room/hostMemberId").asText());
+        assertEquals(memberId(game,2),survivor.at("/match/result/winnerMemberId").asText());assertEquals("ABANDONMENT",survivor.at("/match/result/reason").asText());
+        assertEquals(game.match,request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/id").asText());
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

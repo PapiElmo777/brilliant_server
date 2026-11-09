@@ -32,7 +32,7 @@ public class MatchEngine {
     }
     public void initialize(String matchId,String roomId) {
         db.update("INSERT INTO match_progress(match_id) VALUES(?)",matchId);
-        db.update("INSERT INTO match_players(match_id,member_id) SELECT ?,id FROM room_members WHERE room_id=? AND left_at IS NULL",matchId,roomId);
+        db.update("INSERT INTO match_players(match_id,member_id) SELECT ?,id FROM room_members WHERE room_id=? AND left_at IS NULL AND view_match_id=?",matchId,roomId,matchId);
     }
     private Map<String,Object> player(String id,String member) {
         var rows=db.queryForList("SELECT * FROM match_players WHERE match_id=? AND member_id=?",id,member);
@@ -163,6 +163,7 @@ public class MatchEngine {
     }
     public Map<String,Object> publicView(Map<String,Object> match) {
         String id=(String)match.get("id");var result=new LinkedHashMap<String,Object>();
+        result.put("rematch",null);
         result.put("id",id);result.put("state",match.get("state"));result.put("levelId",match.get("level_id"));result.put("target",match.get("target"));
         try {result.put("participants",json.readTree((String)match.get("participants_json")));}catch(Exception e){throw new IllegalStateException(e);}
         result.put("preparedMemberIds",db.queryForList("SELECT member_id FROM match_players WHERE match_id=? AND prepared_at IS NOT NULL ORDER BY member_id",String.class,id));

@@ -45,4 +45,7 @@ public class MatchesController {
         if(!b.path("approve").isBoolean()) throw new ApiException(400,"VALIDATION_ERROR");
         return rooms.ballot(id,jwt.getSubject(),jwt.getClaimAsString("sid"),text(b,"commandId"),b,text(b,"voteId"),b.path("approve").booleanValue());
     }
+    @PostMapping("/{id}/rematch") Object rematch(@PathVariable String id,@RequestBody JsonNode b,@AuthenticationPrincipal Jwt jwt) {
+        fields(b,Set.of("commandId"));return rooms.rematch(id,jwt.getSubject(),jwt.getClaimAsString("sid"),text(b,"commandId"),b);
+    }
 }

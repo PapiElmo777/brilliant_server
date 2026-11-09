@@ -1,6 +1,6 @@
 # Brilliant Server
 
-Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; preparación, rondas de 60 segundos, premios globales, votación y resultado están implementados; animaciones finales y revancha siguen pendientes.
+Servidor independiente de cuentas para Brilliant: Java 21, Spring Boot, Spring Security y SQLite. La app integra registro, inicio de sesión, cierre de sesión y borrado. Registro requiere 3–128 caracteres y al menos puntuación o símbolo; las cuentas anteriores conservan acceso. La rama `multiplayer` ya incluye salas y lobby persistentes; incluye también canal de eventos y chat; preparación, rondas de 60 segundos, premios globales, votación y resultado están implementados; animaciones finales y revancha están disponibles. La evaluación completa corresponde a entrega 7.
 
 ## Arranque en la red local
 
@@ -130,3 +130,18 @@ V006 preserva los checksums V001–V005, tableros, rondas y acciones. Agrega pro
 Verificación: 427 pruebas Flutter, análisis sin avisos y 75 pruebas Java. Incluye reclamos concurrentes de seis, premios +0, reversión completa ante fallo, resultado fijo, mayorías 2–6, voto idempotente, plazo/racha, abandonos, reconexión real y migración V005→V006. Recorrido adicional de siete clientes Dart/seis canales contra el JAR con datos temporales: colocaciones legales hasta completar zonas reales, premios comunes, tableros privados, conservación de reclamos y victoria del último participante. No es una prueba de seis teléfonos. Nueve capturas nuevas/actualizadas de marcador, votación y resultado en tres tamaños; pruebas con texto 2× y chat accesible. JAR y APK Debug generados.
 
 Trabajo en `multiplayer`, commits en español y sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales. Respaldar SQLite con el proceso detenido antes de arrancar el JAR nuevo: aplica V006 y no se debe volver a un JAR anterior. Siguiente entrega: animaciones finales, presentación de resultados y revancha (fase 6).
+
+
+## Entrega 6 — animaciones, ranking y revancha (8 de noviembre de 2026)
+
+Entregas 1–6 implementadas en `multiplayer`. Solo el ganador recibe la celebración local reutilizada; los demás ven láser, impacto, caída y su puesto confirmado. Ver ranking permite omitir; movimiento reducido muestra el resultado sin desplazamientos ni destellos. Las animaciones son locales y no cambian el resultado, ni se repiten por eventos o reconexión dentro de la misma sesión de sala.
+
+Ranking con ganador/motivo, puestos, puntos, zonas y abandonos del resultado inmutable; fila propia resaltada, Revancha y Salir al menú principal con confirmación remota. Chat accesible durante el final. Pruebas de tres tamaños y texto 2× sin desbordamientos.
+
+Reglas de revancha confirmadas en esta entrega: anfitrión para el primer aceptante, sin recuperar automáticamente el anterior; se permite entrar a jugadores nuevos desde el listado. Aceptación parcial en la misma sala, reinicio de Listo/mapa al aceptar y otro ID al iniciar; meta según los nuevos participantes, sin arrastrar tableros, dados, puntos ni premios. Las personas que aún no aceptan conservan su resultado; al comenzar la siguiente partida se cierra esa aceptación. Cambiar mapa o capacidad dentro del nuevo lobby conserva Listo, como ya estaba confirmado.
+
+V007 mantiene los checksums V001–V006 y agrega la vista de partida del miembro, aceptaciones y eventos autorizados por miembro. Resultados anteriores y nuevo lobby/juego pueden convivir sin mezclar tableros ni recibir estados futuros en eventos atrasados. El cupo cuenta solo al nuevo lobby. Transferencia de anfitrión entre aceptantes; un lobby vacío puede reabrirse si quedan personas en resultados.
+
+Verificación: 440 pruebas Flutter, análisis sin avisos, 83 pruebas Java y recorrido adicional Dart→JAR con siete clientes/seis canales: final con premios y revancha de tres participantes, otro mapa, meta 24, preparación limpia y nueva ronda común. Incluye migración/reapertura V006→V007, aceptación concurrente e idempotente, privacidad de vistas y permisos. Ocho capturas de ranking/animaciones nuevas o actualizadas, revisadas visualmente. JAR y APK Debug generados. Las pruebas usan cuentas, bases y claves temporales; no equivalen a seis teléfonos físicos.
+
+Commits en español en `multiplayer`, sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales. Respaldar SQLite con el proceso detenido antes de aplicar V007; no volver después a un JAR anterior. Próxima entrega: evaluación completa, accesibilidad y comprobación LAN de varios dispositivos (fase 7). La política de reinicio del proceso Java sigue pendiente de decisión explícita.
