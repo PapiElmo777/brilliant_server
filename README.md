@@ -13,7 +13,7 @@ cd /Users/alfredojimenez/developer/brilliant_game/brilliant_server
 
 El perfil `lan` escucha en `0.0.0.0:8080`. En cada arranque aparece un bloque **CONEXIÓN A BRILLIANT** con la IP actual de cada interfaz de red, el puerto real y la dirección completa para escribir en **Servidor** dentro de la app. También indica `10.0.2.2` para el emulador Android en esta computadora. La IP se consulta de nuevo al arrancar; no está fijada en el código. Si hay varias interfaces, usar la dirección de la red compartida con el teléfono. Todos los dispositivos deben estar en la misma red Wi-Fi. En Brilliant Debug, abrir **Servidor**, escribir la dirección mostrada y pulsar **Guardar y conectar** una sola vez por dispositivo. Si cambia la IP, actualizarla allí. En el emulador Android de la misma Mac usar `10.0.2.2:8080`.
 
-El JAR `target/brilliant-server-accounts.jar` es una copia local verificada, generada por separado para evitar sobrescribir el JAR de un proceso activo. Se mantienen la base y la clave en `./data`; arrancar siempre desde esta carpeta para conservar las cuentas.
+Usar siempre **`target/brilliant-server.jar`**, el artefacto actual. Para abrirlo en Terminal con doble clic, usar **`iniciar_servidor.command`**. Las copias con sufijos `accounts`, `lan` o `ip` son nombres históricos y pueden quedar desactualizadas después de compilar. La base y la clave se conservan en `./data`; el iniciador fija esta carpeta para mantener las cuentas.
 
 ## Compilación
 
@@ -145,3 +145,12 @@ V007 mantiene los checksums V001–V006 y agrega la vista de partida del miembro
 Verificación: 440 pruebas Flutter, análisis sin avisos, 83 pruebas Java y recorrido adicional Dart→JAR con siete clientes/seis canales: final con premios y revancha de tres participantes, otro mapa, meta 24, preparación limpia y nueva ronda común. Incluye migración/reapertura V006→V007, aceptación concurrente e idempotente, privacidad de vistas y permisos. Ocho capturas de ranking/animaciones nuevas o actualizadas, revisadas visualmente. JAR y APK Debug generados. Las pruebas usan cuentas, bases y claves temporales; no equivalen a seis teléfonos físicos.
 
 Commits en español en `multiplayer`, sin merge a main. No se reinició el servidor LAN ni se tocaron datos reales. Respaldar SQLite con el proceso detenido antes de aplicar V007; no volver después a un JAR anterior. Próxima entrega: evaluación completa, accesibilidad y comprobación LAN de varios dispositivos (fase 7). La política de reinicio del proceso Java sigue pendiente de decisión explícita.
+
+
+## Corrección del servidor usado por los dispositivos — 9 de noviembre de 2026
+
+El error genérico al listar o crear salas se debía a que el proceso LAN ejecutaba `brilliant-server-lan.jar` del 5 de noviembre, anterior al multijugador, con base V002. La app actual no encontraba las rutas de salas. Se respaldaron SQLite y la clave, se detuvo ese proceso y se arrancó `target/brilliant-server.jar` actual con Java 21/perfil LAN, aplicando V003–V007 y conservando las tres cuentas existentes. Las copias históricas LAN/cuentas/IP se actualizaron con el servidor detenido.
+
+Para los siguientes arranques usar **`brilliant_server/iniciar_servidor.command`** (doble clic) o el JAR estándar. El iniciador fija la carpeta del servidor y usa el artefacto actual; evita seleccionar un JAR de una entrega antigua. Se corrigió la instrucción inicial que todavía apuntaba al nombre histórico LAN.
+
+Verificación en la red real: Samsung SM-N985F y emulador Android, ambos configurados con `10.22.17.233:8080`, registraron cuentas temporales y listaron salas con 200. El Samsung creó una sala con 200, el emulador se unió con 200 y ambos consultaron el mismo lobby con dos participantes. Las cuentas temporales se eliminaron con 204. Se verificaron integridad SQLite, conservación de cuentas/contraseñas protegidas y clave original. Esta prueba usa HTTP desde ambos dispositivos; no es un recorrido visual de botones ni una prueba de seis teléfonos. El servidor actualizado queda abierto en una ventana visible de Terminal.
