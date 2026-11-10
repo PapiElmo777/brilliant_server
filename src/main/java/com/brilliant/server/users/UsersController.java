@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/users/me")
 public class UsersController {
     public record Rename(String username,String currentPassword) {}
+    public record Avatar(String avatarId) {}
+    @PutMapping("/avatar") Object avatar(@AuthenticationPrincipal Jwt jwt,@RequestBody Avatar body) { return auth.avatar(jwt.getSubject(),jwt.getClaimAsString("sid"),body.avatarId()); }
     public record Delete(String currentPassword) {}
     private final AuthService auth;
     public UsersController(AuthService auth) { this.auth=auth; }

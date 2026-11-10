@@ -18,7 +18,7 @@ class RoomMigrationTest {
             var db=new JdbcTemplate(source);
             firstChecksum=db.queryForObject("SELECT checksum FROM schema_migrations WHERE version=1",String.class);
             secondChecksum=db.queryForObject("SELECT checksum FROM schema_migrations WHERE version=2",String.class);
-            db.update("INSERT INTO users VALUES('u','Ana','ana','hash','now','now')");
+            db.update("INSERT INTO users(id,username,username_normalized,password_hash,created_at,updated_at) VALUES('u','Ana','ana','hash','now','now')");
             db.update("INSERT INTO rooms(id,name,host_member_id,capacity,state,revision,sequence,created_at) VALUES('room','Servidor','member',6,'LOBBY',4,8,'now')");
             db.update("INSERT INTO room_members(id,room_id,user_id,session_id,username,join_order,ready,last_seen_at) VALUES('member','room','u','sid','Ana',1,1,'now')");
         }
@@ -26,7 +26,7 @@ class RoomMigrationTest {
             var db=new JdbcTemplate(source);
             assertEquals(firstChecksum,db.queryForObject("SELECT checksum FROM schema_migrations WHERE version=1",String.class));
             assertEquals(secondChecksum,db.queryForObject("SELECT checksum FROM schema_migrations WHERE version=2",String.class));
-            assertEquals(7,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
+            assertEquals(8,db.queryForObject("SELECT COUNT(*) FROM schema_migrations",Integer.class));
             assertEquals("member",db.queryForObject("SELECT host_member_id FROM rooms WHERE id='room'",String.class));
             assertEquals(1,db.queryForObject("SELECT ready FROM room_members WHERE id='member'",Integer.class));
             assertThrows(org.springframework.dao.DataAccessException.class,()->db.update("INSERT INTO room_members(id,room_id,user_id,session_id,username,join_order,last_seen_at) VALUES('duplicate','room','u','sid','Ana',2,'now')"));

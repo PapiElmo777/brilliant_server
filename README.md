@@ -154,3 +154,23 @@ El error genérico al listar o crear salas se debía a que el proceso LAN ejecut
 Para los siguientes arranques usar **`brilliant_server/iniciar_servidor.command`** (doble clic) o el JAR estándar. El iniciador fija la carpeta del servidor y usa el artefacto actual; evita seleccionar un JAR de una entrega antigua. Se corrigió la instrucción inicial que todavía apuntaba al nombre histórico LAN.
 
 Verificación en la red real: Samsung SM-N985F y emulador Android, ambos configurados con `10.22.17.233:8080`, registraron cuentas temporales y listaron salas con 200. El Samsung creó una sala con 200, el emulador se unió con 200 y ambos consultaron el mismo lobby con dos participantes. Las cuentas temporales se eliminaron con 204. Se verificaron integridad SQLite, conservación de cuentas/contraseñas protegidas y clave original. Esta prueba usa HTTP desde ambos dispositivos; no es un recorrido visual de botones ni una prueba de seis teléfonos. El servidor actualizado queda abierto en una ventana visible de Terminal.
+
+
+## Diseño común, historial y avatares — 9 de noviembre de 2026
+
+El multijugador reutiliza DisenoJuegoFijo, nave/entrada, bandeja de números, disparos, dados animados, meteoritos, globo y panel de puntos del modo solitario. Se retiraron la cabecera y el pie duplicados durante preparación/rondas; reloj, historial, trofeo y chat quedan en la cabecera del juego. La preparación conserva la colocación manual y aleatoria animada y la confirmación definitiva ante Java. Las animaciones no generan dados ni colocaciones remotas.
+
+Historial de tiradas con el mismo panel del modo solitario, restaurado desde las acciones del participante en Java. Cada entrada contiene ronda, dados, colocación/omisión, dado/celda y motivo. Los eventos y HTTP muestran exclusivamente el historial propio; el outbox público sigue vacío en ownHistory. Se conservan los puestos y puntos autoritativos. El acceso a ranking y el salto a resultados usan solo el icono de trofeo con etiqueta accesible.
+
+Menú con icono de usuario sin el nombre como botón y «Bienvenido nombre» debajo del logo. Mi cuenta muestra el avatar y Seleccionar avatar, con las cuatro naves de los niveles. La elección se guarda en la cuenta con PUT /api/v1/users/me/avatar y se recupera al iniciar sesión/renovar; null representa el icono general. V008 agrega avatar_id sin modificar migraciones anteriores ni contraseñas, y valida los cuatro IDs del catálogo.
+
+Verificación: análisis sin avisos, 446 pruebas Flutter, 86 Java y recorrido adicional de seis clientes contra el JAR nuevo (avatar tras refresh, historial privado, rondas, premios, final y revancha). Capturas revisadas de menú, cuenta, selector y preparación/ronda en tres tamaños; texto 2×, salida y chat. APK Debug generado. JAR compilado por separado para no sobrescribir un archivo abierto; servidor LAN actualizado con respaldo previo y las tres cuentas conservadas. El teléfono físico no estaba conectado durante esta comprobación visual.
+
+Arranque definitivo, desde la carpeta del proyecto servidor:
+
+```sh
+cd /Users/alfredojimenez/developer/brilliant_game/brilliant_server
+./iniciar_servidor.command
+```
+
+El iniciador usa Java 21 y target/brilliant-server.jar en perfil LAN. La IP se obtiene al arrancar; al cambiar de red hay que actualizar Servidor en la app. La red usada al finalizar esta corrección anuncia 192.168.0.31:8080. Para ver el diseño y elegir avatar hay que ejecutar/instalar el APK de esta actualización. Trabajo en multiplayer, commits en español y sin merge a main; la evaluación de seis teléfonos sigue pendiente.

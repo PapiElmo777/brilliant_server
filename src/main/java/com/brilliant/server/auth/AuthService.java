@@ -40,7 +40,7 @@ public class AuthService {
         try {
             AuthSession result=Database.write(tx,() -> {
                 String id=UUID.randomUUID().toString(),now=clock.instant().toString();
-                db.update("INSERT INTO users VALUES (?,?,?,?,?,?)",id,username,credentials.normalized(username),hash,now,now);
+                db.update("INSERT INTO users(id,username,username_normalized,password_hash,created_at,updated_at) VALUES (?,?,?,?,?,?)",id,username,credentials.normalized(username),hash,now,now);
                 return start(accounts.byId(id));
             });
             testAccounts.remember(result.user().id(),password);
@@ -142,6 +142,14 @@ public class AuthService {
             testAccounts.remember(user,password);
             return result;
         } catch(org.springframework.dao.DataAccessException e) { if(Database.usernameConflict(e)) throw new ApiException(409,"USERNAME_UNAVAILABLE"); throw e; }
+    }
+    public User avatar(String user,String sid,String avatarId) {
+        if(avatarId!=null && !Set.of("tablero_01","tablero_02","tablero_03","tablero_04").contains(avatarId)) throw new ApiException(400,"VALIDATION_ERROR");
+        return Database.write(tx,()->{
+            accounts.requireActive(user,sid);
+            db.update("UPDATE users SET avatar_id=?,updated_at=? WHERE id=?",avatarId,clock.instant().toString(),user);
+            return accounts.byId(user).user();
+        });
     }
     public void delete(String user,String sid,String password) {
         Stored verified=verify(user,sid,password);

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class Accounts {
     public static final long IDLE_SECONDS = 45;
-    public record User(String id,String username,String createdAt,String updatedAt) {}
+    public record User(String id,String username,String createdAt,String updatedAt,String avatarId) { public User(String id,String username,String createdAt,String updatedAt) {this(id,username,createdAt,updatedAt,null);} }
     public record Stored(User user,String passwordHash) {}
     private final JdbcTemplate db;
     private final Clock clock;
@@ -18,7 +18,7 @@ public class Accounts {
     public Stored byId(String id) { return find("id",id); }
     private Stored find(String column,String value) {
         var rows=db.query("SELECT * FROM users WHERE "+column+"=?", (r,n) -> new Stored(
-            new User(r.getString("id"),r.getString("username"),r.getString("created_at"),r.getString("updated_at")),r.getString("password_hash")),value);
+            new User(r.getString("id"),r.getString("username"),r.getString("created_at"),r.getString("updated_at"),r.getString("avatar_id")),r.getString("password_hash")),value);
         return rows.isEmpty()?null:rows.getFirst();
     }
     public Stored requireActive(String user,String session) {

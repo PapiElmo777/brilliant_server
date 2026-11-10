@@ -851,6 +851,33 @@ class ApiIntegrationTest {
         assertEquals(memberId(game,2),survivor.at("/match/result/winnerMemberId").asText());assertEquals("ABANDONMENT",survivor.at("/match/result/reason").asText());
         assertEquals(game.match,request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body.at("/match/id").asText());
     }
+    @Test void avatarIsValidatedOwnedAndRestoredOnRefreshAndLogin() throws Exception {
+        var owner=register();var other=register();String route="/users/me/avatar";
+        assertTrue(owner.body.at("/user/avatarId").isNull());
+        for(String avatar:List.of("tablero_01","tablero_02","tablero_03","tablero_04")) {
+            var saved=request("PUT",route,Map.of("avatarId",avatar),access(owner));assertEquals(200,saved.status);assertEquals(avatar,saved.body.path("avatarId").asText());
+        }
+        error(request("PUT",route,Map.of("avatarId","desconocido"),access(owner)),400,"VALIDATION_ERROR");
+        assertTrue(request("GET","/users/me",null,access(other)).body.path("avatarId").isNull());
+        var renewed=request("POST","/auth/refresh",Map.of("refreshToken",refresh(owner)),null);assertEquals(200,renewed.status);
+        assertEquals("tablero_04",renewed.body.at("/user/avatarId").asText());
+        assertEquals(204,request("POST","/auth/logout",null,access(renewed)).status);
+        var logged=request("POST","/auth/login",Map.of("username",owner.body.at("/user/username").asText(),"password",PASSWORD),null);
+        assertEquals("tablero_04",logged.body.at("/user/avatarId").asText());
+        var reset=new LinkedHashMap<String,Object>();reset.put("avatarId",null);
+        assertTrue(request("PUT",route,reset,access(logged)).body.path("avatarId").isNull());
+    }
+    @Test void ownDiceHistorySurvivesReconnectAndNeverUsesTheOpponentsActions() throws Exception {
+        var game=game(2);var initial=preparedGame(game);String route=actionRoute(game);
+        roomCommand("POST",route,game.players.getFirst(),Map.of("kind","SKIP"));
+        var first=request("GET","/rooms/"+game.room,null,access(game.players.getFirst())).body;
+        var other=request("GET","/rooms/"+game.room,null,access(game.players.get(1))).body;
+        assertEquals(1,first.at("/match/ownHistory").size());assertEquals("SKIP",first.at("/match/ownHistory/0/kind").asText());
+        assertEquals(initial.body.at("/data/match/round/dice"),first.at("/match/ownHistory/0/dice"));assertEquals(0,other.at("/match/ownHistory").size());
+        roomCommand("POST",route,game.players.get(1),Map.of("kind","SKIP"));
+        try(var channel=channel(game.players.getFirst(),game.room)) {assertEquals(first.at("/match/ownHistory"),channel.next("SNAPSHOT").at("/data/match/ownHistory"));}
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM room_events e,json_each(e.data_json,'$.match.ownHistory') h WHERE e.room_id=?",Integer.class,game.room));
+    }
     @BeforeEach void clear() throws Exception {
         clock.now=Instant.parse("2026-11-02T00:00:00Z");
         db.update("DELETE FROM users");db.update("DELETE FROM deletion_ledger");

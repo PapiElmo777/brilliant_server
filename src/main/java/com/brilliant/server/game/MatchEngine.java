@@ -167,7 +167,7 @@ public class MatchEngine {
         result.put("id",id);result.put("state",match.get("state"));result.put("levelId",match.get("level_id"));result.put("target",match.get("target"));
         try {result.put("participants",json.readTree((String)match.get("participants_json")));}catch(Exception e){throw new IllegalStateException(e);}
         result.put("preparedMemberIds",db.queryForList("SELECT member_id FROM match_players WHERE match_id=? AND prepared_at IS NOT NULL ORDER BY member_id",String.class,id));
-        result.put("ownBoard",Map.of());result.put("ownPreparationConfirmed",false);result.put("round",null);result.put("result",scoring.result(id));
+        result.put("ownHistory",List.of());result.put("ownBoard",Map.of());result.put("ownPreparationConfirmed",false);result.put("round",null);result.put("result",scoring.result(id));
         result.put("scores",scoring.scores(id));result.put("claims",scoring.claims(id));result.put("zones",scoring.zones(id,(String)match.get("level_id")));
         result.put("endVote",voteView(id));
         result.put("blockedRounds",db.queryForObject("SELECT blocked_rounds FROM match_progress WHERE match_id=?",Integer.class,id));
@@ -183,6 +183,11 @@ public class MatchEngine {
     public Map<String,Object> privateView(String id,String member) {
         var rows=db.queryForList("SELECT * FROM match_players WHERE match_id=? AND member_id=?",id,member);
         var result=new LinkedHashMap<String,Object>();
+        var history=new ArrayList<Map<String,Object>>();
+        for(var r:db.queryForList("SELECT r.number,r.first_die,r.second_die,a.kind,a.die_index,a.cell_id,a.reason FROM match_rounds r JOIN round_actions a ON a.round_id=r.id WHERE r.match_id=? AND a.member_id=? ORDER BY r.number",id,member)) {
+            var item=new LinkedHashMap<String,Object>();item.put("number",r.get("number"));item.put("dice",List.of(r.get("first_die"),r.get("second_die")));item.put("kind",r.get("kind"));item.put("dieIndex",r.get("die_index"));item.put("cellId",r.get("cell_id"));item.put("reason",r.get("reason"));history.add(item);
+        }
+        result.put("ownHistory",history);
         result.put("ownBoard",rows.isEmpty()?Map.of():board((String)rows.getFirst().get("board_json")));
         result.put("ownPreparationConfirmed",!rows.isEmpty() && rows.getFirst().get("prepared_at")!=null);
         result.put("ownAction",null);var round=round(id);

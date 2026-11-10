@@ -273,6 +273,7 @@ public class RoomService {
     private Map<String,Object> overlay(Map<String,Object> snapshot,Map<String,Object> privateData) {
         var match=(Map<String,Object>)snapshot.get("match");
         if(match!=null) {
+            match.put("ownHistory",privateData.getOrDefault("ownHistory",List.of()));
             match.put("ownBoard",privateData.getOrDefault("ownBoard",Map.of()));
             match.put("ownPreparationConfirmed",privateData.getOrDefault("ownPreparationConfirmed",false));
             if(match.get("round") instanceof Map<?,?> round) ((Map<String,Object>)round).put("ownAction",privateData.get("ownAction"));

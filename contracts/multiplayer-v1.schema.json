@@ -894,6 +894,12 @@
               "type": "null"
             }
           ]
+        },
+        "ownHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
         }
       },
       "required": [
@@ -912,7 +918,8 @@
         "zones",
         "blockedRounds",
         "endVote",
-        "rematch"
+        "rematch",
+        "ownHistory"
       ],
       "additionalProperties": false
     },
@@ -1218,6 +1225,60 @@
       "required": [
         "available",
         "acceptedCount"
+      ],
+      "additionalProperties": false
+    },
+    "historyEntry": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dice": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          }
+        },
+        "kind": {
+          "enum": [
+            "PLACE",
+            "SKIP"
+          ]
+        },
+        "dieIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cellId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "PLAYER",
+            "TIMEOUT"
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "dice",
+        "kind",
+        "dieIndex",
+        "cellId",
+        "reason"
       ],
       "additionalProperties": false
     }
