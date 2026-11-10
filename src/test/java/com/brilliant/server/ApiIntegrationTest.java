@@ -982,12 +982,12 @@ class ApiIntegrationTest {
     }
     @Test void presenceKeepsFirstSessionAndIdleSessionCannotRevive() throws Exception {
         Reply first=register();String username=first.body.path("user").path("username").asText();
-        clock.now=clock.now.plusSeconds(44);
+        clock.now=clock.now.plusSeconds(299);
         assertEquals(200,request("GET","/users/me",null,access(first)).status);
-        clock.now=clock.now.plusSeconds(44);
+        clock.now=clock.now.plusSeconds(299);
         error(request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null),409,"SESSION_ALREADY_ACTIVE");
         assertEquals(200,request("GET","/users/me",null,access(first)).status);
-        clock.now=clock.now.plusSeconds(45);
+        db.update("UPDATE sessions SET last_seen_at=?",clock.now.minusSeconds(600).toString());
         error(request("GET","/users/me",null,access(first)),401,"SESSION_INVALID");
         Reply second=request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null);
         assertEquals(200,second.status);
@@ -999,7 +999,7 @@ class ApiIntegrationTest {
         Reply first=register();String username=first.body.path("user").path("username").asText();
         error(request("POST","/auth/login",Map.of("username",username,"password","wrong!"),null),401,"INVALID_CREDENTIALS");
         assertEquals(200,request("GET","/users/me",null,access(first)).status);
-        clock.now=clock.now.plusSeconds(45);
+        clock.now=clock.now.plusSeconds(600);
         db.execute("CREATE TRIGGER fail_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'test rollback'); END");
         try { assertEquals(503,request("POST","/auth/login",Map.of("username",username,"password",PASSWORD),null).status); }
         finally { db.execute("DROP TRIGGER fail_session"); }

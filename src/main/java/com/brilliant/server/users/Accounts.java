@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class Accounts {
-    public static final long IDLE_SECONDS = 45;
+    public static final long IDLE_SECONDS = 600;
     public record User(String id,String username,String createdAt,String updatedAt,String avatarId) { public User(String id,String username,String createdAt,String updatedAt) {this(id,username,createdAt,updatedAt,null);} }
     public record Stored(User user,String passwordHash) {}
     private final JdbcTemplate db;
